@@ -51,3 +51,26 @@ Not sent: `retDate`, `airlines`, `fromFlightNumbers`, `requestSource`, `cid` (au
 - Do not map invented names like `origin`/`destination` onto the wire request.
 - Do not fabricate `sessionId` from `requestId` / `clientRequestId` (both null on our sandbox cassette).
 - `OfferId` (Fulfilment / `getOfferPrice.do`) is out of scope for Task 4.
+
+## Task 13 — Model router timeout default (Gemini 3.6 thinking)
+
+**Chosen operational default for callers:** `timeout_seconds=60.0` for text/image
+structured calls; `timeout_seconds=90.0` when audio is attached.
+
+**Frozen INTERFACES.md §4** still defines `ModelRequest.timeout_seconds: float = 20.0`.
+We implement that field default as written. Gate evidence (pre-Task-13 live calls
+against `gemini-3.6-flash`) showed:
+
+| Call | Wall latency | Thoughts tokens | Total tokens |
+|---|---|---|---|
+| Text | ~1.5s | 84 | 92 |
+| Image | ~4.8s | 307 | 1418 |
+| Audio | ~22.4s | 174 | 210 |
+
+Audio alone already exceeds the frozen 20s default, and thinking tokens add
+variable latency on every call. Leaving the ModelRequest default at 20.0 would
+falsely kill real agent multimodal calls. Until INTERFACES is amended, agents
+and smokes MUST pass an explicit timeout (≥60 text/image, ≥90 audio). The
+Task 13 smoke happy-path uses `60.0`.
+
+Objection also appended to `docs/RISKS.md`.

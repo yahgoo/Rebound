@@ -61,3 +61,18 @@ minutes` as written in frozen INTERFACES / Task 9 (stricter; still within
 the ~2h session). Do **not** silently widen the gate to 2h against the
 frozen interface. A later INTERFACES amendment may raise the confirmation
 TTL up to the verify session lifetime if product wants that headroom.
+
+## Task 13 — `ModelRequest.timeout_seconds` default too low for Gemini 3.6
+
+Frozen `INTERFACES.md` §4 sets `ModelRequest.timeout_seconds: float = 20.0`.
+
+Pre-Task-13 gate against `gemini-3.6-flash` measured audio at ~22.4s wall time
+and 84–307 thoughts tokens on every modality. The frozen 20s default will
+false-positive `ModelTimeoutError` on real multimodal Interpreter / Caretaker
+calls.
+
+**Implementation choice (Task 13):** keep the ModelRequest field default at
+`20.0` as written. Document the operational override (`60` text/image, `90`
+audio) in `docs/QODER.md`. Do not silently widen the frozen default in
+`base.py`. Prefer an INTERFACES amendment later if product wants the safer
+default baked in.
