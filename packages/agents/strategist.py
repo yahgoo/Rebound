@@ -643,6 +643,7 @@ def _detach_candidate(c: Candidate) -> Candidate:
         id=c.id,
         case_id=c.case_id,
         offer_id=c.offer_id,
+        routing_identifier=c.routing_identifier,
         strategy=c.strategy,
         segments_json=c.segments_json,
         price=c.price,
@@ -687,6 +688,7 @@ def _offer_to_candidate(
     return Candidate(
         case_id=case_id,
         offer_id=offer.offer_id,
+        routing_identifier=offer.routing_identifier,
         strategy=strategy.value,
         segments_json=segments_json,
         price=offer.price,
