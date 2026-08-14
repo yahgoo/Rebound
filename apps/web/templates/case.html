@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+
+{% block title %}{{ case_ref }} · Rebound{% endblock %}
+
+{% block content %}
+  <div
+    id="case-shell"
+    data-case-stream-url="{{ stream_url }}"
+    class="grid h-full grid-cols-[minmax(340px,0.9fr)_minmax(500px,1.45fr)_minmax(340px,0.95fr)] gap-4"
+  >
+    {% include "_pane_case.html" %}
+
+    <div
+      id="pane-trace"
+      aria-label="Agent trace"
+      class="pane min-h-0 rounded-2xl border border-slate-700 bg-slate-900"
+    ></div>
+
+    <div
+      id="pane-traveller"
+      aria-label="Traveller view"
+      class="pane min-h-0 rounded-2xl border border-slate-700 bg-slate-900"
+    ></div>
+  </div>
+{% endblock %}

@@ -1,0 +1,98 @@
+<section
+  id="pane-case"
+  aria-labelledby="case-pane-title"
+  {% if stream_url %}
+    hx-ext="sse"
+    sse-connect="{{ stream_url }}"
+    hx-on::sse-message="if (event.detail.type !== 'status') return; try { const snapshot = JSON.parse(event.detail.data); const chip = document.getElementById('case-status-chip'); if (chip && typeof snapshot.status === 'string') { chip.dataset.status = snapshot.status; chip.textContent = snapshot.status.replaceAll('_', ' '); } } catch (_error) {}"
+  {% endif %}
+  class="pane flex min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl shadow-black/30"
+>
+  {% if stream_url %}
+    <div
+      id="status-sse-snapshot"
+      class="hidden"
+      aria-hidden="true"
+      sse-swap="status"
+      hx-swap="none"
+    ></div>
+  {% endif %}
+
+  <header class="border-b border-slate-700 px-6 py-5">
+    <div class="flex items-start justify-between gap-4">
+      <div>
+        <p class="text-base font-bold uppercase tracking-[0.18em] text-cyan-300">
+          Recovery case
+        </p>
+        <h1 id="case-pane-title" class="mt-1 text-3xl font-black text-white">
+          {{ case_ref }}
+        </h1>
+      </div>
+      <span
+        id="case-status-chip"
+        role="status"
+        aria-live="polite"
+        data-sse-event="status"
+        data-sse-field="status"
+        data-status="{{ status }}"
+        class="rounded-full border border-amber-300/60 bg-amber-300/10 px-4 py-2 text-base font-extrabold uppercase tracking-wide text-amber-200"
+      >
+        {{ status_label }}
+      </span>
+    </div>
+  </header>
+
+  <div class="min-h-0 flex-1 space-y-8 overflow-y-auto px-6 py-6">
+    <section aria-labelledby="traveller-heading">
+      <h2 id="traveller-heading" class="text-base font-bold uppercase tracking-[0.16em] text-slate-400">
+        Traveller
+      </h2>
+      <p class="mt-2 text-3xl font-bold leading-tight text-white">{{ traveller_name }}</p>
+      {% if passenger_count > 1 %}
+        <p class="mt-2 text-lg font-semibold text-slate-300">
+          {{ passenger_count }} travellers
+        </p>
+      {% endif %}
+    </section>
+
+    <section aria-labelledby="original-itinerary-heading">
+      <div class="flex items-center justify-between gap-3">
+        <h2
+          id="original-itinerary-heading"
+          class="text-base font-bold uppercase tracking-[0.16em] text-slate-400"
+        >
+          Original itinerary
+        </h2>
+        <span class="rounded-md bg-rose-400/10 px-2.5 py-1 text-sm font-bold uppercase text-rose-300">
+          Disrupted
+        </span>
+      </div>
+
+      {% if itinerary %}
+        <ol class="mt-4 space-y-4">
+          {% for segment in itinerary %}
+            <li class="rounded-xl border border-rose-400/20 bg-slate-950/60 p-4">
+              <s class="block decoration-rose-400 decoration-2">
+                <span class="flex items-center justify-between gap-3 text-2xl font-black text-slate-200">
+                  <span>{{ segment.origin }} → {{ segment.destination }}</span>
+                  <span class="text-lg text-slate-400">{{ segment.flight }}</span>
+                </span>
+                <span class="mt-2 block font-mono text-lg font-semibold text-slate-400">
+                  {{ segment.departure }} – {{ segment.arrival }}
+                </span>
+              </s>
+            </li>
+          {% endfor %}
+        </ol>
+      {% else %}
+        <p class="mt-4 rounded-xl border border-slate-700 bg-slate-950/60 p-4 text-xl font-semibold text-slate-300">
+          Waiting for itinerary details
+        </p>
+      {% endif %}
+    </section>
+  </div>
+
+  <footer class="border-t border-slate-700 px-6 py-4 font-mono text-base text-slate-400">
+    Opened {{ opened_at }}
+  </footer>
+</section>
