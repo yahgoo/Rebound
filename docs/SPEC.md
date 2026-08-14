@@ -119,8 +119,9 @@ Every field originates from an Atlas response (I1).
 | `id` | `int` PK | |
 | `case_id` | `int` FK → `RecoveryCase` | |
 | `offer_id` | `str` | from `search.do`; the only handle a model may select |
+| `routing_identifier` | `str` | from `search.do` `routingIdentifier`; echoed to `verify.do` (I2). Added Task 18 — was missing from the frozen Candidate table while present on `Offer` |
 | `strategy` | `str` | `same_route_later` \| `nearby_airport` \| `one_stop_reroute` \| `next_morning_hotel` |
-| `segments_json` | `str` | verbatim from Atlas |
+| `segments_json` | `str` | bare JSON list of Atlas segments (verbatim); not an envelope |
 | `price` / `currency` | `Decimal` / `str` | |
 | `arrival_delay_minutes` | `int` | vs. original scheduled arrival |
 | `stop_count` | `int` | |
