@@ -1,0 +1,21 @@
+{
+  "key": "a5f88f9a47a5b1973c04d6d9ff996fe154b0f41c98173b64f17db89edc172c16",
+  "path": "pay.do",
+  "request": {
+    "cid": "KHA24079_api_1",
+    "orderNo": "SMOKE-REDACT-ORDER",
+    "cardNumber": "[REDACTED]",
+    "cvv": "[REDACTED]",
+    "holder_given_name": "[REDACTED]",
+    "holder_surname": "[REDACTED]",
+    "cardNum": "[REDACTED]",
+    "birthday": "[REDACTED]",
+    "requestSource": "smoke-transport-redact"
+  },
+  "response": {
+    "status": 0,
+    "msg": "redaction-probe"
+  },
+  "latency_ms": 1,
+  "recorded_at": "2026-08-14T07:06:08.678023Z"
+}
