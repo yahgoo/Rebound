@@ -36,3 +36,28 @@ Frozen `docs/INTERFACES.md` §1.2 requires a transport argument and keyword-only
 Sandbox observation: unknown order numbers still return HTTP/Atlas `status=0`
 with null `orderNo`/`orderStatus`, so polling them correctly times out with
 `AtlasTimeoutError` rather than raising a not-found error.
+
+## Task 9 — Confirmation `expires_at` cites the wrong Atlas clock
+
+Task 9 and frozen `INTERFACES.md` §2 say `ConfirmationGate.open` /
+`ConfirmationRequest.expires_at` must align to Atlas's **5-minute ticketing
+window** [E].
+
+Task 5 corrected the Atlas session lifecycle:
+
+- `verify.do` issues a **new** `sessionId` valid **~2 hours** for later
+  `order.do` (INTERFACES §1.2, TASKS Task 5).
+- The **5-minute** figure is `OrderResult.ticketing_deadline` /
+  `tktLimitTime` — a **post-order** ticketing constraint, not a pre-order
+  confirmation TTL.
+
+Confirmation sits between verify and order, so the Atlas clock that actually
+bounds “we can still call `order.do`” is the ~2h verify session, not the
+5-minute post-order ticketing window. Task 9 / INTERFACES conflate those
+two clocks.
+
+**Implementation choice (Task 9):** keep enforcing `expires_at ≤ now + 5
+minutes` as written in frozen INTERFACES / Task 9 (stricter; still within
+the ~2h session). Do **not** silently widen the gate to 2h against the
+frozen interface. A later INTERFACES amendment may raise the confirmation
+TTL up to the verify session lifetime if product wants that headroom.
