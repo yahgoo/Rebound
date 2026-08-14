@@ -132,7 +132,10 @@ class SearchRequest(BaseModel):
 
 
 class SearchResult(BaseModel):
-    session_id: str                  # MUST be preserved for verify.do [E]
+    session_id: str                  # NOT a live search.do field [E]. search.do
+                                     # does not issue sessionId; verify.do does
+                                     # (§1.2). Kept only for backward compat with
+                                     # Task 4 (empty string). Do not rely on it.
     offers: list[Offer]
     raw: dict
 
@@ -227,16 +230,31 @@ class AtlasClient:
     ) -> None: ...
 
     async def search(self, request: SearchRequest) -> SearchResult:
-        """POST search.do. Raises AtlasNoResultsError on zero offers."""
+        """POST search.do. Raises AtlasNoResultsError on zero offers.
 
-    async def verify(self, *, session_id: str, offer_id: str) -> VerifyResult:
-        """POST verify.do. Sets price_changed; raises AtlasPriceMovedError
-        only if the caller passed expected_price via verify_strict()."""
+        search.do returns routings with routingIdentifier; it does not
+        issue a sessionId [E]. See verify() for where sessionId appears.
+        """
+
+    async def verify(self, *, routing_identifier: str) -> VerifyResult:
+        """POST verify.do with the Offer.routing_identifier from search [E].
+
+        Required wire input is routingIdentifier (not offer_id / fid).
+        routingIdentifier must be ≤6 hours old when verify is called [E].
+
+        On success, Atlas issues a NEW sessionId on the verify response
+        (valid ~2 hours for order.do) [E]. That sessionId is newly minted
+        here — it is not echoed from search, which never returned one.
+
+        Sets price_changed by comparing the verified price to the search
+        price. Raises AtlasPriceMovedError only via verify_strict().
+        """
 
     async def verify_strict(
-        self, *, session_id: str, offer_id: str, expected_price: Decimal
+        self, *, routing_identifier: str, expected_price: Decimal
     ) -> VerifyResult:
-        """Raises AtlasPriceMovedError when the verified price differs."""
+        """Like verify(), then raises AtlasPriceMovedError when the
+        verified price differs from expected_price."""
 
     async def get_offer_price(self, *, offer_id: str) -> VerifyResult:
         """POST getOfferPrice.do. Preserves OfferId [E]."""
@@ -250,7 +268,11 @@ class AtlasClient:
         contact_email: str,
         contact_phone: str,
     ) -> OrderResult:
-        """POST order.do. Caller MUST have a successful verify first (I2)."""
+        """POST order.do. Caller MUST have a successful verify first (I2).
+
+        session_id MUST be the sessionId newly issued by verify.do
+        (not a search-time value — search.do does not return one) [E].
+        """
 
     async def pay(self, *, order_no: str, card: CardDetails) -> PayResult:
         """POST pay.do. Raises AtlasPaymentDeclinedError on 604 and
@@ -270,11 +292,10 @@ class AtlasClient:
         """Poll until status is terminal or timeout. The webhook safety net (I7)."""
 ```
 
-<!-- AMBIGUOUS: hackathon-strategy.md Appendix A names the endpoints and the fields
-     that must be preserved (routingIdentifier, sessionId, OfferId, orderNo) but not
-     the full request/response JSON shapes. The exact wire field names must be read
-     from https://resources.atriptech.com (llms-full.txt or the GitBook MCP endpoint)
-     during Task 3, and recorded as cassettes on first call. Do not invent field names. -->
+<!-- CONFIRMED (Task 4 live cassette + Atlas verify.md): Atlas flow is
+     search → routingIdentifier (no sessionId at search time) → verify(routingIdentifier)
+     → newly issued sessionId (~2h) → order(sessionId). routingIdentifier ≤6h at verify.
+     Exact remaining wire shapes: read from https://resources.atriptech.com; do not invent. -->
 
 ### 1.3 Live and replay transports
 

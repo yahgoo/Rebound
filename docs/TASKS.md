@@ -204,13 +204,17 @@ Confirm both runs print a parsed `SearchResult` with at least one `Offer` carryi
 **Depends on:** Task 4
 **Files to create/modify:** `packages/atlas/models.py`, `packages/atlas/client.py`, `packages/atlas/smoke_verify.py`
 **Files you must NOT touch:** `packages/atlas/transport.py`, `packages/atlas/cassette.py`
-**Read first:** `docs/SPEC.md` §2 (I1, I2), `docs/INTERFACES.md` §1.1–1.2
+**Read first:** `docs/SPEC.md` §2 (I1, I2), `docs/INTERFACES.md` §1.1–1.2, `docs/RISKS.md` (Task 4 `sessionId` finding)
 
 **Do:**
 
 - Add `VerifyResult` to `packages/atlas/models.py`.
 - Implement `verify`, `verify_strict` and `get_offer_price` per `INTERFACES.md` §1.2.
-- `verify` must echo the `sessionId` from search and the `OfferId` unchanged **[E]**, and set `price_changed` by comparing the returned price to the offer's search price.
+- Real Atlas flow **[E]** (confirmed against live docs + Task 4 cassette; see `docs/RISKS.md`):
+  - `search.do` returns `routingIdentifier` and does **not** issue a `sessionId`.
+  - `verify.do` takes `routingIdentifier` as its required input (`Offer.routing_identifier`, **not** `offer_id` / `fid`). The identifier must be ≤6 hours old.
+  - `verify.do`'s response **issues a new** `sessionId` (valid ~2 hours) for later `order.do`. That `sessionId` is newly minted — it is **not** echoed from search.
+- `verify` must send `routingIdentifier` unchanged, preserve the newly issued `sessionId` on `VerifyResult`, and set `price_changed` by comparing the returned price to the offer's search price.
 - `verify_strict` raises `AtlasPriceMovedError` carrying both `old_price` and `new_price`.
 - Capture `ticketing_deadline` semantics where Atlas returns them — the 5-minute ticketing window is a real constraint **[E]**.
 
@@ -222,7 +226,7 @@ Confirm both runs print a parsed `SearchResult` with at least one `Offer` carryi
 python -m packages.atlas.smoke_verify
 ```
 
-Confirm it prints `verified=True` with an authoritative price for an `offer_id` taken from Task 4's smoke run. Then trigger the failure path directly: call `verify_strict` with a deliberately wrong `expected_price` and confirm `AtlasPriceMovedError` is actually raised (paste the traceback), not merely described.
+Confirm it prints `verified=True` with an authoritative price and a non-empty newly issued `session_id`, using a `routing_identifier` taken from Task 4's smoke run (not `offer_id` / `fid`). Then trigger the failure path directly: call `verify_strict` with a deliberately wrong `expected_price` and confirm `AtlasPriceMovedError` is actually raised (paste the traceback), not merely described.
 
 **Do not implement yet:** `order`, `pay`, chaos injection.
 
