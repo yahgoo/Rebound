@@ -1,0 +1,164 @@
+<section
+  id="traveller-view-root"
+  class="traveller flex h-full min-h-0 flex-col {% if embedded %}overflow-hidden px-4 py-4{% else %}w-full max-w-[420px]{% endif %}"
+  data-case-ref="{{ case_ref }}"
+  data-status="{{ status }}"
+  data-stream-url="{{ stream_url }}"
+  data-play-label="{{ play_label }}"
+  data-pause-label="{{ pause_label }}"
+>
+  {% if embedded %}
+    <header class="mb-3 shrink-0">
+      <p class="text-sm font-bold uppercase tracking-[0.18em] text-cyan-300">
+        Traveller view
+      </p>
+      <h2 class="mt-1 text-xl font-black text-white">What she sees</h2>
+    </header>
+  {% endif %}
+
+  <div
+    id="phone-frame"
+    class="phone-frame mx-auto flex min-h-0 w-full max-w-[380px] flex-1 flex-col rounded-[2.4rem] border-[10px] border-slate-700 bg-black p-3 shadow-2xl shadow-black/50"
+  >
+    <div class="mx-auto mb-2 h-5 w-24 shrink-0 rounded-full bg-slate-800" aria-hidden="true"></div>
+    <div
+      class="traveller-screen flex min-h-0 flex-1 flex-col overflow-y-auto rounded-[1.6rem] bg-amber-50 px-5 py-6 text-slate-950"
+    >
+      <p class="text-lg font-extrabold uppercase tracking-wide text-slate-600">
+        Rebound
+      </p>
+      <h3
+        id="traveller-headline"
+        class="mt-4 text-4xl font-black leading-tight tracking-tight text-slate-950"
+      >
+        {{ headline }}
+      </h3>
+      <p id="traveller-detail" class="mt-4 text-2xl font-semibold leading-snug text-slate-800">
+        {{ detail }}
+      </p>
+
+      <div class="mt-8 flex flex-1 flex-col justify-end gap-4">
+        <audio
+          id="spoken-plan-audio"
+          {% if audio_url %}src="{{ audio_url }}" preload="metadata"{% else %}preload="none"{% endif %}
+          playsinline
+        ></audio>
+
+        <button
+          type="button"
+          id="play-spoken-plan"
+          aria-label="{{ play_label if audio_url else play_pending_label }}"
+          data-audio-target="spoken-plan-audio"
+          {% if not audio_url %}disabled{% endif %}
+          style="min-height: 44px; min-width: 44px;"
+          class="inline-flex w-full items-center justify-center rounded-2xl px-6 py-5 text-2xl font-black leading-tight {% if audio_url %}bg-slate-950 text-amber-50{% else %}cursor-not-allowed bg-slate-300 text-slate-600{% endif %}"
+        >
+          {{ play_label if audio_url else play_pending_label }}
+        </button>
+
+        {% if pdf_url %}
+          <a
+            id="large-print-pdf"
+            href="{{ pdf_url }}"
+            style="min-height: 44px; min-width: 44px;"
+            class="inline-flex w-full items-center justify-center rounded-2xl border-4 border-slate-950 px-6 py-5 text-center text-2xl font-black leading-tight text-slate-950"
+          >
+            {{ pdf_label }}
+          </a>
+        {% else %}
+          <p
+            id="large-print-pdf-pending"
+            class="rounded-2xl border-4 border-dashed border-slate-400 px-6 py-5 text-center text-xl font-bold leading-tight text-slate-600"
+          >
+            {{ pdf_pending_label }}
+          </p>
+        {% endif %}
+
+        <p
+          id="family-message-status"
+          class="rounded-2xl px-2 py-3 text-center text-xl font-bold leading-tight {% if family_sent %}text-emerald-800{% else %}text-slate-600{% endif %}"
+        >
+          {{ family_sent_label if family_sent else family_pending_label }}
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <script type="application/json" id="traveller-copy">{{ copy_json | safe }}</script>
+  <script>
+    (function () {
+      const root = document.getElementById("traveller-view-root");
+      if (!root || root.dataset.bound === "true") return;
+      root.dataset.bound = "true";
+
+      const button = document.getElementById("play-spoken-plan");
+      const audio = document.getElementById("spoken-plan-audio");
+      const headline = document.getElementById("traveller-headline");
+      const detail = document.getElementById("traveller-detail");
+      const copyNode = document.getElementById("traveller-copy");
+      let stages = {};
+      try {
+        stages = JSON.parse(copyNode ? copyNode.textContent : "{}").stages || {};
+      } catch (_error) {
+        stages = {};
+      }
+
+      if (button && audio) {
+        button.addEventListener("click", function () {
+          const source = audio.getAttribute("src") || audio.src;
+          if (!source || button.disabled) return;
+          if (audio.paused) {
+            const playback = audio.play();
+            if (playback && typeof playback.then === "function") {
+              playback.catch(function (error) {
+                button.dataset.playError = String(error);
+              });
+            }
+            return;
+          }
+          audio.pause();
+        });
+        audio.addEventListener("play", function () {
+          button.textContent = root.dataset.pauseLabel;
+          button.setAttribute("aria-label", root.dataset.pauseLabel);
+        });
+        audio.addEventListener("pause", function () {
+          button.textContent = root.dataset.playLabel;
+          button.setAttribute("aria-label", root.dataset.playLabel);
+        });
+        audio.addEventListener("ended", function () {
+          button.textContent = root.dataset.playLabel;
+          button.setAttribute("aria-label", root.dataset.playLabel);
+        });
+      }
+
+      function stageFor(status) {
+        const normalized = String(status || "waiting").toLowerCase();
+        if (normalized === "recovered") return "recovered";
+        if (normalized === "failed") return "failed";
+        if (normalized === "awaiting_confirmation") return "awaiting_confirmation";
+        if (normalized === "executing") return "executing";
+        if (normalized === "waiting" || normalized === "") return "waiting";
+        return "working";
+      }
+
+      function applyStatus(status) {
+        root.dataset.status = status;
+        const copy = stages[stageFor(status)];
+        if (!copy) return;
+        if (headline) headline.textContent = copy.headline;
+        if (detail) detail.textContent = copy.detail;
+      }
+
+      document.body.addEventListener("htmx:sseMessage", function (event) {
+        const type = event.detail && event.detail.type;
+        const raw = event.detail && event.detail.data;
+        if (type !== "status" || !raw) return;
+        try {
+          const snapshot = JSON.parse(raw);
+          if (typeof snapshot.status === "string") applyStatus(snapshot.status);
+        } catch (_error) {}
+      });
+    })();
+  </script>
+</section>
