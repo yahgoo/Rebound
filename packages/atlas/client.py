@@ -1,13 +1,15 @@
-"""Atlas client. Task 4–6: search + verify + order.do + pay.do."""
+"""Atlas client. Task 4–7: search → pay + queryOrderDetails + poll."""
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import re
 import time
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import Any, Protocol
 
 from packages.atlas.errors import (
     AtlasError,
@@ -15,10 +17,12 @@ from packages.atlas.errors import (
     AtlasPaymentDeclinedError,
     AtlasPriceMovedError,
     AtlasThreeDSRequiredError,
+    AtlasTimeoutError,
 )
 from packages.atlas.models import (
     CardDetails,
     Offer,
+    OrderDetails,
     OrderResult,
     Passenger,
     PayResult,
@@ -29,8 +33,15 @@ from packages.atlas.models import (
 )
 from packages.domain.enums import ChaosProfile
 
-if TYPE_CHECKING:
-    from packages.atlas.models import OrderDetails
+_log = logging.getLogger(__name__)
+
+# Atlas queryOrderDetails.do orderStatus → domain status string [E].
+_ORDER_STATUS_NAMES: dict[str, str] = {
+    "0": "unpaid",
+    "1": "ticketing_in_process",
+    "2": "ticketed",
+    "-3": "cancelled",
+}
 
 # Atlas SGT (GMT+8) for tktLimitTime [E].
 _SGT = timezone(timedelta(hours=8))
@@ -489,6 +500,75 @@ def _payment_methods_from_order(body: dict) -> list[int]:
     return list(dict.fromkeys(methods))
 
 
+def _order_status_name(raw: object) -> str:
+    """Map Atlas orderStatus codes to names; unknown codes pass through [E]."""
+    if raw in (None, ""):
+        return ""
+    code = str(raw)
+    return _ORDER_STATUS_NAMES.get(code, code)
+
+
+def _pnr_from_order_details(body: dict) -> str | None:
+    for key in ("pnrCode", "pnr", "airlinePnr"):
+        val = body.get(key)
+        if val not in (None, ""):
+            return str(val)
+    bookings = body.get("airlineBookings")
+    if isinstance(bookings, list):
+        for b in bookings:
+            if not isinstance(b, dict):
+                continue
+            pnr = b.get("airlinePnr")
+            if pnr not in (None, ""):
+                return str(pnr)
+    pax_infos = body.get("paxTicketInfos")
+    if isinstance(pax_infos, list):
+        for info in pax_infos:
+            if not isinstance(info, dict):
+                continue
+            for pnr in info.get("airlinePNRs") or []:
+                if pnr not in (None, ""):
+                    return str(pnr)
+    return None
+
+
+def _segments_from_routing(routing: dict) -> list[Segment]:
+    from_segments = routing.get("fromSegments") or []
+    ret_segments = routing.get("retSegments") or []
+    if not isinstance(from_segments, list):
+        from_segments = []
+    if not isinstance(ret_segments, list):
+        ret_segments = []
+    segments = [_segment_from_atlas(s) for s in from_segments if isinstance(s, dict)]
+    segments.extend(_segment_from_atlas(s) for s in ret_segments if isinstance(s, dict))
+    return segments
+
+
+def _order_details_from_body(body: dict, *, requested_order_no: str) -> OrderDetails:
+    """Map queryOrderDetails.do onto OrderDetails. Status from orderStatus only (I7)."""
+    order_raw = body.get("orderNo")
+    if order_raw not in (None, ""):
+        order_no = str(order_raw)
+    else:
+        # Sandbox may return status=0 with null fields for unknown orders [E observed].
+        order_no = requested_order_no
+
+    routing = body.get("routing") if isinstance(body.get("routing"), dict) else {}
+    total = _decimal(body.get("totalPrice")) + _decimal(body.get("totalTransactionFee"))
+    currency = str(body.get("currency") or "")
+
+    return OrderDetails(
+        order_no=order_no,
+        status=_order_status_name(body.get("orderStatus")),
+        pnr=_pnr_from_order_details(body),
+        ticket_numbers=_ticket_numbers_from_pay(body),
+        segments=_segments_from_routing(routing),
+        total_amount=total,
+        currency=currency,
+        raw=dict(body),
+    )
+
+
 class AtlasClient:
     def __init__(
         self,
@@ -785,7 +865,15 @@ class AtlasClient:
 
     async def query_order_details(self, *, order_no: str) -> OrderDetails:
         """POST queryOrderDetails.do. Authoritative state (I7)."""
-        raise NotImplementedError("Task 7")
+        ono = str(order_no or "").strip()
+        if not ono:
+            raise AtlasError(
+                code="missing_order_no",
+                message="queryOrderDetails.do requires a non-empty orderNo",
+            )
+        # Wire field from resources.atriptech.com query-order OpenAPI [E].
+        body = await self._transport.post("queryOrderDetails.do", {"orderNo": ono})
+        return _order_details_from_body(body, requested_order_no=ono)
 
     async def poll_order_until(
         self,
@@ -795,5 +883,45 @@ class AtlasClient:
         timeout_seconds: int = 120,
         interval_seconds: float = 3.0,
     ) -> OrderDetails:
-        """Poll until status is terminal or timeout. The webhook safety net (I7)."""
-        raise NotImplementedError("Task 7")
+        """Poll until status is terminal or timeout. The webhook safety net (I7).
+
+        Cancellation-safe: each attempt is a discrete query_order_details call;
+        only asyncio.sleep runs between attempts (no DB/session held across sleeps).
+        """
+        ono = str(order_no or "").strip()
+        if not ono:
+            raise AtlasError(
+                code="missing_order_no",
+                message="poll_order_until requires a non-empty orderNo",
+            )
+        if not terminal_statuses:
+            raise AtlasError(
+                code="missing_terminal_statuses",
+                message="poll_order_until requires a non-empty terminal_statuses set",
+            )
+
+        deadline = time.monotonic() + float(timeout_seconds)
+        last: OrderDetails | None = None
+        while True:
+            # Fresh call each iteration — never hold resources across the sleep (I7).
+            last = await self.query_order_details(order_no=ono)
+            _log.debug("order_no=%s status=%s", last.order_no, last.status)
+            if last.status in terminal_statuses:
+                return last
+
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            # Sleep is cancellable; CancelledError propagates to the caller.
+            await asyncio.sleep(min(float(interval_seconds), remaining))
+            if time.monotonic() >= deadline:
+                break
+
+        raise AtlasTimeoutError(
+            code="timeout",
+            message=(
+                f"order {ono!r} did not reach {sorted(terminal_statuses)!r} "
+                f"within {timeout_seconds}s"
+                + (f" (last status={last.status!r})" if last is not None else "")
+            ),
+        )

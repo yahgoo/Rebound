@@ -1,4 +1,4 @@
-"""Atlas wire models (INTERFACES.md §1.1). Task 4–6: search + verify + order/pay."""
+"""Atlas wire models (INTERFACES.md §1.1). Task 4–7: search → pay + order details."""
 
 from __future__ import annotations
 
@@ -120,4 +120,17 @@ class PayResult(BaseModel):
     ticket_numbers: list[str] = Field(default_factory=list)
     pnr: str | None = None
     error_code: str | None = None  # "604" / "616" surface here as well as raising
+    raw: dict
+
+
+class OrderDetails(BaseModel):
+    """Authoritative order state. The only trusted source (I7)."""
+
+    order_no: str
+    status: str
+    pnr: str | None
+    ticket_numbers: list[str]
+    segments: list[Segment]
+    total_amount: Decimal
+    currency: str
     raw: dict

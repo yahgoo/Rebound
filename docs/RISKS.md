@@ -24,3 +24,15 @@ This is a docs-only inconsistency, not an API contract issue. Task 6
 implementation followed INTERFACES.md; no package code was affected. The
 Verify snippet in TASKS.md was corrected to match INTERFACES.md so a later
 re-run does not fail the same way.
+
+## Task 7 — Verify-block `poll_order_until` call shape vs frozen INTERFACES
+
+Task 7's Verify block in `docs/TASKS.md` called
+`AtlasClient()` with no transport and
+`c.poll_order_until('NONEXISTENT-ORDER', ...)` as a sync positional call.
+
+Frozen `docs/INTERFACES.md` §1.2 requires a transport argument and keyword-only
+`order_no` on an `async` method. Implementation followed INTERFACES.md.
+Sandbox observation: unknown order numbers still return HTTP/Atlas `status=0`
+with null `orderNo`/`orderStatus`, so polling them correctly times out with
+`AtlasTimeoutError` rather than raising a not-found error.
