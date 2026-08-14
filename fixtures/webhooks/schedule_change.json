@@ -1,0 +1,36 @@
+{
+  "cid": "REBOUND_TEST",
+  "data": {
+    "orderNo": "TESTA20260815002321968",
+    "previousSegs": [
+      {
+        "arrAirport": "SUB",
+        "arrTerminal": "",
+        "arrTime": "2026-09-13 14:00:00",
+        "carrier": "QG",
+        "codeShare": false,
+        "depAirport": "HLP",
+        "depTerminal": "",
+        "depTime": "2026-09-13 12:30:00",
+        "flightNumber": "QG176"
+      }
+    ],
+    "revisedSegs": [
+      {
+        "arrAirport": "SUB",
+        "arrTerminal": "",
+        "arrTime": "2026-09-13 17:00:00",
+        "carrier": "QG",
+        "codeShare": false,
+        "depAirport": "HLP",
+        "depTerminal": "",
+        "depTime": "2026-09-13 15:30:00",
+        "flightNumber": "QG176"
+      }
+    ],
+    "scheduleChangeType": 1
+  },
+  "notificationId": "20260913043000001RBNDX",
+  "status": 0,
+  "type": "order.schedulechange"
+}
