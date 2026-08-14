@@ -62,6 +62,10 @@ class Settings(BaseSettings):
 
     # Optional / secrets — no secret defaults
     gemini_api_key: str | None = None
+    # When set to "openrouter", ModelBackend.GEMINI uses OpenRouter transport
+    # (OPENROUTER_API_KEY) instead of direct google-genai.
+    gemini_via: str | None = None
+    openrouter_api_key: str | None = None
     gemma_endpoint: str | None = None
     kimi_api_key: str | None = None
     daytona_api_key: str | None = None

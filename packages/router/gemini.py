@@ -2,6 +2,10 @@
 
 Assumes inputs are already Guardian-redacted. Never redacts. Never handles
 card data (I4).
+
+Transport selection (infra):
+  unset / anything other than openrouter → google-genai (this module)
+  GEMINI_VIA=openrouter → OpenRouterGeminiClient (see openrouter_gemini.py)
 """
 
 from __future__ import annotations
@@ -15,13 +19,44 @@ from google.genai import types
 
 from packages.router.base import (
     ModelBackend,
+    ModelClient,
     ModelRequest,
     ModelResponse,
     ModelTimeoutError,
 )
+from packages.router.openrouter_gemini import OpenRouterGeminiClient
 
 # Confirmed working in the pre-Task-13 gate test.
 _DEFAULT_MODEL = "gemini-3.6-flash"
+_OPENROUTER_MODEL = "google/gemini-3.6-flash"
+
+
+def build_gemini_client(settings: object) -> ModelClient:
+    """Construct the GEMINI ModelClient for the active transport.
+
+    GEMINI_VIA=openrouter → OpenRouter PAYGO (OPENROUTER_API_KEY).
+    Otherwise → direct google-genai (GEMINI_API_KEY).
+    """
+    via = str(getattr(settings, "gemini_via", None) or "").strip().lower()
+    if via == "openrouter":
+        key = getattr(settings, "openrouter_api_key", None)
+        if not key:
+            raise RuntimeError(
+                "GEMINI_VIA=openrouter requires OPENROUTER_API_KEY"
+            )
+        return OpenRouterGeminiClient(key, model_name=_OPENROUTER_MODEL)
+    key = getattr(settings, "gemini_api_key", None)
+    if not key:
+        raise RuntimeError("Direct Gemini transport requires GEMINI_API_KEY")
+    return GeminiClient(key)
+
+
+def gemini_credentials_present(settings: object) -> bool:
+    """True when the active GEMINI transport has a usable credential."""
+    via = str(getattr(settings, "gemini_via", None) or "").strip().lower()
+    if via == "openrouter":
+        return bool(getattr(settings, "openrouter_api_key", None))
+    return bool(getattr(settings, "gemini_api_key", None))
 
 
 class GeminiClient:

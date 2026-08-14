@@ -9,10 +9,16 @@ from packages.router.base import (
     ModelSchemaError,
     ModelTimeoutError,
 )
-from packages.router.gemini import GeminiClient
+from packages.router.gemini import (
+    GeminiClient,
+    build_gemini_client,
+    gemini_credentials_present,
+)
+from packages.router.openrouter_gemini import OpenRouterGeminiClient
 
 __all__ = [
     "GeminiClient",
+    "OpenRouterGeminiClient",
     "ModelBackend",
     "ModelClient",
     "ModelRouter",
@@ -27,6 +33,9 @@ def get_router(*, settings: object | None = None) -> ModelRouter:
 
     Registers only backends whose credentials are present. Stretch backends
     (Gemma / Kimi / Qwen) are not implemented yet (Task 26).
+
+    GEMINI transport: direct google-genai by default; set GEMINI_VIA=openrouter
+    and OPENROUTER_API_KEY to route the same ModelBackend.GEMINI via OpenRouter.
     """
     if settings is None:
         from apps.api.settings import get_settings
@@ -35,9 +44,8 @@ def get_router(*, settings: object | None = None) -> ModelRouter:
 
     clients: dict[ModelBackend, ModelClient] = {}
 
-    gemini_key = getattr(settings, "gemini_api_key", None)
-    if gemini_key:
-        clients[ModelBackend.GEMINI] = GeminiClient(gemini_key)
+    if gemini_credentials_present(settings):
+        clients[ModelBackend.GEMINI] = build_gemini_client(settings)
 
     default = getattr(settings, "model_router_default", ModelBackend.GEMINI)
     if not isinstance(default, ModelBackend):
@@ -49,8 +57,8 @@ def get_router(*, settings: object | None = None) -> ModelRouter:
             default = next(iter(clients))
         else:
             raise RuntimeError(
-                "No model backends configured. Set GEMINI_API_KEY (or another "
-                "supported backend credential)."
+                "No model backends configured. Set GEMINI_API_KEY, or "
+                "GEMINI_VIA=openrouter with OPENROUTER_API_KEY."
             )
 
     return ModelRouter(clients, default=default)
