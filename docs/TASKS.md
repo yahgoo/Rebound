@@ -19,6 +19,46 @@
 
 ---
 
+## Verification protocol (applies to every task below)
+
+Every task ends with a **"Verify"** block instead of a passive "Done when" claim.
+That block is a literal, runnable checklist. **You (the agent) must execute it
+yourself, in this same session, after implementing the task — never report a
+task complete on the basis of reasoning about the code alone.**
+
+For every task, after implementing, do the following before reporting back:
+
+1. **Run `git status` and `git diff --stat` first.** Confirm you touched only
+   the files listed under "Files to create/modify." If you touched anything
+   else, undo that change or explicitly flag it as a deliberate exception and
+   justify it.
+2. **Execute every command in the task's "Verify" block, in order, for real.**
+   Do not simulate, summarize, or assume an outcome. Paste the actual stdout,
+   stderr and exit code for each command into your report.
+3. **Check negative/failure cases** the same way as the happy path — if the
+   Verify block includes a case that should raise, fail, or reject, trigger
+   it for real and show the actual error, not a description of what "should"
+   happen.
+4. **Run relevant existing tests** (`pytest` if any exist for touched
+   packages) and include their output.
+5. **Clean up any side effects** you created solely for verification —
+   temporary env var overrides, throwaway files, running servers — restoring
+   the working tree to the state implied by "Files to create/modify" only.
+6. **Report a single verdict**: `TASK N VERIFIED` only if every command in the
+   Verify block produced the exact expected result, or `TASK N NOT VERIFIED`
+   with the specific command and output that failed. Do not soften a failure
+   or claim partial success as success.
+7. If anything in `docs/SPEC.md`, `docs/INTERFACES.md`, or a prior task's
+   output makes a Verify step impossible to run exactly as written (e.g. a
+   missing fixture, an unavailable credential), stop, report the blocker
+   explicitly, and do not invent a workaround that isn't in the task.
+
+Do not ask the human to run these commands themselves — that is what this
+protocol replaces. The human's job is to read your verdict and the pasted
+output, review the diff, and decide whether to commit.
+
+---
+
 ## Phase 0 — Repo skeleton
 
 ### Task 1 — Repo skeleton, settings, health check
@@ -39,7 +79,19 @@
 
 **Constraints:** No database server, no Redis, no build step (SPEC §6.6–6.7). Settings must never contain a default for a secret.
 
-**Done when:** `uvicorn apps.api.main:app` starts and `curl localhost:8000/healthz` returns all five fields, with the app booting successfully when only `ATLAS_BASE_URL`, `ATLAS_CLIENT_ID`, `ATLAS_CLIENT_SECRET` and `GUARDIAN_MAX_SPEND_SGD` are set.
+**Verify (run this yourself before reporting done):**
+
+```bash
+cp .env .env.bak 2>/dev/null || true
+printf "ATLAS_BASE_URL=https://sandbox.atriptech.com\nATLAS_CLIENT_ID=x\nATLAS_CLIENT_SECRET=y\nGUARDIAN_MAX_SPEND_SGD=800\n" > .env
+uvicorn apps.api.main:app --host 127.0.0.1 --port 8000 &
+sleep 2
+curl -s http://127.0.0.1:8000/healthz
+kill %1
+mv .env.bak .env 2>/dev/null || rm -f .env
+```
+
+Confirm the JSON has exactly five keys (`status`, `mode`, `executor`, `surface`, `chaos`) with the documented default values, and that the app booted with only the four required vars set. Then verify the negative case: remove `ATLAS_CLIENT_SECRET` from a temp `.env`, attempt to start the app, and confirm it fails with a clear settings-validation error rather than an unrelated traceback.
 
 **Do not implement yet:** any Atlas call, any route beyond `/healthz`, any template, Docker, Caddy.
 
@@ -63,7 +115,21 @@
 
 **Constraints:** `AgentEvent` is append-only (I8): define no update or delete helper on it. No Alembic — `create_all()` only.
 
-**Done when:** a script that calls `create_all()` against a temp file, inserts one row per table with valid foreign keys, and re-reads them, exits 0; and `sqlite3 <file> "PRAGMA journal_mode;"` prints `wal`.
+**Verify (run this yourself before reporting done):**
+
+```bash
+python -c "
+from packages.domain.db import create_all, session_factory
+import tempfile, os
+path = tempfile.mktemp(suffix='.db')
+os.environ['DB_PATH'] = path
+create_all(path)
+print('create_all OK')
+"
+sqlite3 "$(python -c "import tempfile; print(tempfile.gettempdir())")"/*.db "PRAGMA journal_mode;" 2>/dev/null || true
+```
+
+Adapt the exact invocation to however `db.py` actually exposes its factory (check the file you just wrote), but the goal is: create a temp SQLite file, call `create_all()`, insert one row per table with valid foreign keys, re-read them, and confirm `PRAGMA journal_mode` reports `wal`. Also grep `packages/domain/models.py` for any `def update` or `def delete` on `AgentEvent` and confirm there is none.
 
 **Do not implement yet:** business logic, validation rules beyond types, any repository or service layer.
 
@@ -90,7 +156,14 @@
 
 **Constraints:** I4 — nothing card-shaped may reach disk. I9 — `ReplayTransport` and `LiveTransport` must be substitutable through the `AtlasTransport` protocol with no caller change.
 
-**Done when:** `python -m packages.atlas.smoke_transport` performs one live `POST` to `ATLAS_BASE_URL`, writes a cassette file, then re-runs the same request through `ReplayTransport` and returns a byte-identical payload without network access; and a grep for a test PAN across `fixtures/cassettes/` returns nothing.
+**Verify (run this yourself before reporting done):**
+
+```bash
+python -m packages.atlas.smoke_transport
+grep -RIn --include="*.json" -E "4[0-9]{12,18}" fixtures/cassettes/ ; echo "exit=$?"
+```
+
+Confirm the smoke script performs one live `POST`, writes a cassette, replays it byte-identically with no network access on the second run, and that the grep for a test PAN pattern across `fixtures/cassettes/` returns no matches (exit code 1, meaning "not found").
 
 **Do not implement yet:** `AtlasClient` or any endpoint-specific method, chaos injection.
 
@@ -113,7 +186,14 @@
 
 **Constraints:** I1 — every `Offer` field must come from the Atlas response; no computed or defaulted flight data.
 
-**Done when:** `python -m packages.atlas.smoke_search` searches a real future-dated sandbox route and prints a parsed `SearchResult` with at least one `Offer` carrying a non-empty `offer_id` and `routing_identifier`, without raising; the same script passes with `REBOUND_MODE=replay`.
+**Verify (run this yourself before reporting done):**
+
+```bash
+python -m packages.atlas.smoke_search
+REBOUND_MODE=replay python -m packages.atlas.smoke_search
+```
+
+Confirm both runs print a parsed `SearchResult` with at least one `Offer` carrying a non-empty `offer_id` and `routing_identifier`, and that `docs/QODER.md` now documents the exact field names you read from the live Atlas docs (not invented). Confirm neither run raises.
 
 **Do not implement yet:** `verify`, `order`, `pay`, `query_order_details`, `get_offer_price`.
 
@@ -136,7 +216,13 @@
 
 **Constraints:** I2 — `verify` is the gate before any order. The verified price, not the search price, is authoritative from here on.
 
-**Done when:** `python -m packages.atlas.smoke_verify` takes an `offer_id` from Task 4's smoke run, verifies it, and prints `verified=True` with an authoritative price; and forcing a mismatched `expected_price` into `verify_strict` raises `AtlasPriceMovedError`.
+**Verify (run this yourself before reporting done):**
+
+```bash
+python -m packages.atlas.smoke_verify
+```
+
+Confirm it prints `verified=True` with an authoritative price for an `offer_id` taken from Task 4's smoke run. Then trigger the failure path directly: call `verify_strict` with a deliberately wrong `expected_price` and confirm `AtlasPriceMovedError` is actually raised (paste the traceback), not merely described.
 
 **Do not implement yet:** `order`, `pay`, chaos injection.
 
@@ -159,7 +245,21 @@
 
 **Constraints:** I2 — refuse to build an order request for an unverified offer. I4 — card data stays in Zone A; assert this in code, not in a comment.
 
-**Done when:** `python -m packages.atlas.smoke_order_pay` completes search → verify → order → pay against the sandbox for one passenger and prints an issued ticket number or PNR; `repr(card)` contains no digit sequence longer than 4; and the written cassette contains no card field.
+**Verify (run this yourself before reporting done):**
+
+```bash
+python -m packages.atlas.smoke_order_pay
+python -c "
+from packages.atlas.models import CardDetails
+c = CardDetails(number='4111111111111111', cvv='123', holder_given_name='Test', holder_family_name='User')
+r = repr(c)
+assert not any(seg.isdigit() and len(seg) > 4 for seg in __import__('re').findall(r'\d+', r)), r
+print('repr redaction OK:', r)
+"
+grep -RIn -E "4[0-9]{12,18}" fixtures/cassettes/ ; echo "exit=$?"
+```
+
+Confirm the smoke script completes search → verify → order → pay for one passenger and prints an issued ticket number or PNR, `repr(card)` contains no digit run longer than 4, and the grep for a PAN across cassettes finds nothing.
 
 **Do not implement yet:** the `Reject` / `Three DS` chaos rewrite (Task 25), Guardian checks, any retry or failover logic.
 
@@ -182,7 +282,24 @@
 
 **Constraints:** I7 — this is the safety net for best-effort webhooks. Never infer state from anything but this call.
 
-**Done when:** `python -m packages.atlas.smoke_poll <order_no>` prints the authoritative status of the Task 6 order, and `poll_order_until` with an unreachable terminal status raises `AtlasTimeoutError` within its timeout rather than hanging.
+**Verify (run this yourself before reporting done):**
+
+```bash
+python -m packages.atlas.smoke_poll <order_no_from_task_6>
+python -c "
+from packages.atlas.client import AtlasClient
+import time
+c = AtlasClient()
+t0 = time.time()
+try:
+    c.poll_order_until('NONEXISTENT-ORDER', terminal_statuses={'ticketed'}, interval_seconds=1, timeout_seconds=3)
+    print('FAIL: did not raise')
+except Exception as e:
+    print('raised as expected in', round(time.time()-t0,1), 's:', type(e).__name__)
+"
+```
+
+Confirm the first command prints the authoritative status of the Task 6 order, and the second confirms `poll_order_until` actually raises `AtlasTimeoutError` within roughly its timeout window rather than hanging — paste the real elapsed time.
 
 **Do not implement yet:** the webhook receiver, reconciliation between webhook and poll.
 
@@ -208,7 +325,14 @@
 
 **Constraints:** Pure functions, no database, no model call, no network (I3). Never log the input or the map.
 
-**Done when:** `python -m packages.guardian.smoke_redaction` proves round-trip fidelity — `rehydrate(redact(text).text, map) == text` — for a fixture containing two passenger names, a passport number, a date of birth and a test PAN; `assert_no_pii` raises on the raw text and passes on the redacted text; and an EXIF-bearing JPEG comes back with no GPS tag.
+**Verify (run this yourself before reporting done):**
+
+```bash
+python -m packages.guardian.smoke_redaction
+grep -RIn "httpx\|requests\|sqlmodel\|sqlite3" packages/guardian/redaction.py ; echo "exit=$?"
+```
+
+Confirm round-trip fidelity (`rehydrate(redact(text).text, map) == text`) for a fixture with two names, a passport number, a DOB and a test PAN; confirm `assert_no_pii` actually raises on the raw text (paste the exception) and passes on the redacted text; confirm an EXIF-bearing JPEG loses its GPS tag; and confirm the grep for network/db imports in `redaction.py` finds nothing.
 
 **Do not implement yet:** calling redaction from any agent, the spend cap, the audit log.
 
@@ -232,7 +356,14 @@
 
 **Constraints:** I3 — the cap is never influenced by model output; both ceilings arrive as `Decimal` arguments only. I6 — there is no code path, flag or default that grants confirmation without a `ConfirmationDecision`.
 
-**Done when:** `python -m packages.guardian.smoke_policy` demonstrates all six behaviours — over-cap rejection, under-cap approval, env cap winning, intent ceiling winning, nonce replay rejected, expired request rejected — and `grep -rn "router\|generate\|httpx" packages/guardian/policy.py` returns nothing.
+**Verify (run this yourself before reporting done):**
+
+```bash
+python -m packages.guardian.smoke_policy
+grep -rn "router\|generate\|httpx" packages/guardian/policy.py ; echo "exit=$?"
+```
+
+Confirm the smoke script actually exercises and prints all six behaviours (over-cap rejection, under-cap approval, env cap winning, intent ceiling winning, nonce replay rejected, expired request rejected) — for the rejection cases, paste the actual raised exception or verdict, not a description. Confirm the grep finds nothing.
 
 **Do not implement yet:** persisting decisions to the database, the HTTP confirm endpoint, the UI.
 
@@ -255,7 +386,14 @@
 
 **Constraints:** I8 — append-only. I4 — a redacted payload only.
 
-**Done when:** `python -m packages.guardian.smoke_audit` writes five events for one case, reads them back in insertion order with monotonically increasing ids and non-decreasing `elapsed_ms`, returns exactly the last two for `after_id=<3rd id>`, and raises when handed a payload containing a Luhn-valid PAN.
+**Verify (run this yourself before reporting done):**
+
+```bash
+python -m packages.guardian.smoke_audit
+grep -n "def update\|def delete" packages/guardian/audit.py ; echo "exit=$?"
+```
+
+Confirm five events are written for one case and read back in ascending id order with non-decreasing `elapsed_ms`; confirm `after_id` filtering returns exactly the expected last two rows; and actually attempt to write a payload containing a Luhn-valid PAN and paste the raised exception. Confirm the grep for update/delete finds nothing.
 
 **Do not implement yet:** the SSE endpoint, the receipt builder.
 
@@ -281,7 +419,13 @@
 
 **Constraints:** `ScoringInput` is the complete allowlist of what may cross into Zone B — no passenger names, no passport numbers, no card data, no Atlas secret. Assert this before dispatch.
 
-**Done when:** `python -m packages.executors.smoke_local` scores 12 fixture candidates with a hand-written `score()` function across 8 slots, prints a descending ranking, emits at least 8 distinct `SandboxStatus` sequences, and silently drops an injected result whose `offer_id` was not in the input.
+**Verify (run this yourself before reporting done):**
+
+```bash
+python -m packages.executors.smoke_local
+```
+
+Confirm it scores 12 fixture candidates across 8 slots, prints a descending ranking, emits at least 8 distinct `SandboxStatus` sequences (paste the transition list for at least one slot), and — inject a fabricated result with an `offer_id` not present in the input and confirm it is actually silently dropped from the final ranking (paste before/after).
 
 **Do not implement yet:** Daytona, model-generated scoring code, fallback selection logic.
 
@@ -307,7 +451,14 @@
 
 **Constraints:** Rankings must be **identical** to `LocalExecutor` for identical input — same sort, same tie-break, same score arithmetic. Zone B allowlist as in Task 11.
 
-**Done when:** `EXECUTOR=daytona python -m packages.executors.smoke_parity` runs the same 12 fixture candidates through both executors and prints `PARITY OK` because the two ranked `offer_id` lists are equal; the Daytona dashboard shows zero surviving sandboxes afterwards; and `grep -n "ATLAS_CLIENT_SECRET" packages/executors/daytona.py` returns nothing.
+**Verify (run this yourself before reporting done):**
+
+```bash
+EXECUTOR=daytona python -m packages.executors.smoke_parity
+grep -n "ATLAS_CLIENT_SECRET" packages/executors/daytona.py ; echo "exit=$?"
+```
+
+Confirm the same 12 fixture candidates through both executors produce identical ranked `offer_id` lists — paste both lists side by side, not just "PARITY OK". Check the Daytona dashboard or API for surviving sandboxes after the run and confirm zero remain. Confirm the grep for the Atlas secret finds nothing.
 
 **Do not implement yet:** the fallback decision itself (Task 18), the UI grid.
 
@@ -333,7 +484,13 @@
 
 **Constraints:** Zone C — this module assumes its input is already redacted and must not itself redact. It must never receive or forward card data.
 
-**Done when:** `python -m packages.router.smoke_router` returns a schema-valid structured object from Gemini for a two-field Pydantic model, prints `latency_ms`, raises `ModelTimeoutError` with `timeout_seconds=0.001`, and raises `ModelSchemaError` for a prompt that cannot satisfy the schema after one retry.
+**Verify (run this yourself before reporting done):**
+
+```bash
+python -m packages.router.smoke_router
+```
+
+Confirm it returns a schema-valid structured object from Gemini for a two-field Pydantic model and prints `latency_ms`. Then actually trigger and paste: a `ModelTimeoutError` with `timeout_seconds=0.001`, and a `ModelSchemaError` for a prompt that cannot satisfy the schema after one retry — real tracebacks, not descriptions.
 
 **Do not implement yet:** Gemma, Kimi and Qwen backends (Task 26 stretch), any agent, prompt content for a real agent.
 
@@ -356,7 +513,13 @@
 
 **Constraints:** I7 — order facts come only from `query_order_details`. I8 — audit every ingest, including duplicates.
 
-**Done when:** `python -m packages.agents.smoke_watcher` ingests the same fixture webhook payload three times and the database holds exactly one `RecoveryCase`, one `Order`, and three `AgentEvent` rows.
+**Verify (run this yourself before reporting done):**
+
+```bash
+python -m packages.agents.smoke_watcher
+```
+
+Confirm ingesting the same fixture webhook payload three times leaves exactly one `RecoveryCase`, one `Order`, and three `AgentEvent` rows — query the database directly and paste the counts, don't just trust the script's own print statement.
 
 **Do not implement yet:** the HTTP webhook route, interpretation, search.
 
@@ -380,7 +543,14 @@
 
 **Constraints:** I1 — the intent contains constraints only. Any itinerary-shaped field in a model response is dropped, not stored.
 
-**Done when:** `python -m packages.agents.smoke_interpreter "My flight was cancelled, I must reach Singapore before 2pm tomorrow, I can spend up to 400 dollars, I walk with a cane and I speak Mandarin"` prints a `RecoveryIntent` with `must_arrive_by` set, `budget_ceiling_sgd == 400`, non-empty `mobility_notes`, `language` starting with `zh`, and `raw_input_kinds == ["text"]`; and a two-word vague input yields a clarification question instead of an intent.
+**Verify (run this yourself before reporting done):**
+
+```bash
+python -m packages.agents.smoke_interpreter "My flight was cancelled, I must reach Singapore before 2pm tomorrow, I can spend up to 400 dollars, I walk with a cane and I speak Mandarin"
+python -m packages.agents.smoke_interpreter "help"
+```
+
+Confirm the first call prints a `RecoveryIntent` with `must_arrive_by` set, `budget_ceiling_sgd == 400`, non-empty `mobility_notes`, `language` starting with `zh`, and `raw_input_kinds == ["text"]`. Confirm the second, deliberately vague input yields a clarification question instead of a fabricated intent.
 
 **Do not implement yet:** voice, photo, EXIF handling, Strategist.
 
@@ -404,7 +574,22 @@
 
 **Constraints:** I4 — no EXIF, no GPS, no unredacted name reaches Zone C. I1 — photo-derived text is evidence, never an offer.
 
-**Done when:** `python -m packages.agents.smoke_interpreter --voice fixtures/personas/tan_voice.m4a --photo fixtures/personas/tan_board.jpg` returns a `RecoveryIntent` with `language` starting with `zh`, `must_arrive_by` set, and `raw_input_kinds == ["voice", "photo"]`; and the bytes sent to the router contain no EXIF marker.
+**Verify (run this yourself before reporting done):**
+
+```bash
+python -m packages.agents.smoke_interpreter --voice fixtures/personas/tan_voice.m4a --photo fixtures/personas/tan_board.jpg
+python -c "
+from packages.guardian.redaction import redact_image_metadata
+data = open('fixtures/personas/tan_board.jpg','rb').read()
+clean = redact_image_metadata(data)
+from PIL import Image
+import io
+img = Image.open(io.BytesIO(clean))
+print('exif present:', bool(img._getexif()))
+"
+```
+
+Confirm the first command returns a `RecoveryIntent` with `language` starting with `zh`, `must_arrive_by` set, and `raw_input_kinds == ["voice", "photo"]`. Confirm the second command actually shows `exif present: False` (or equivalent), not merely a claim.
 
 **Do not implement yet:** Gemma sovereign path, Strategist, TTS output.
 
@@ -429,7 +614,17 @@
 
 **Constraints:** I1 — the model chooses among offer ids and writes scoring code; it never authors an itinerary. Generated code is untrusted and will run only in Zone B.
 
-**Done when:** `python -m packages.agents.smoke_strategist <case_ref>` prints four dispatched strategies, at least six deduplicated `Candidate` rows persisted with distinct `offer_id`s, and a `write_scoring_code` output that compiles, defines `score`, and imports nothing outside the stdlib; and a `select` call containing one fabricated `offer_id` returns a list excluding it.
+**Verify (run this yourself before reporting done):**
+
+```bash
+python -m packages.agents.smoke_strategist <case_ref>
+python -c "
+import ast
+code = open('/tmp/last_scoring_code.py').read() if __import__('os').path.exists('/tmp/last_scoring_code.py') else None
+"
+```
+
+Confirm the smoke run prints four dispatched strategies and at least six deduplicated `Candidate` rows with distinct `offer_id`s. Take the actual generated scoring code from this run, confirm with `ast.parse` that it compiles, `compile()`/`exec` it in an isolated namespace to confirm `score` is defined, and grep it for any `import` outside the stdlib (paste the result). Then call `select` with one fabricated `offer_id` injected and confirm it is excluded from the result — paste before/after.
 
 **Do not implement yet:** running the scoring code, verification, ordering.
 
@@ -454,7 +649,15 @@
 
 **Constraints:** I2 — nothing unverified proceeds. I3 — the cap uses `min(intent ceiling, env cap)` and no model output.
 
-**Done when:** `python -m packages.agents.smoke_score_verify <case_ref>` prints a descending ranking, shows the top three marked `verified=True` with authoritative prices, marks at least one candidate `over_cap` when run with `GUARDIAN_MAX_SPEND_SGD=1`, and completes with `EXECUTOR=daytona` and with the Daytona key removed, logging the local fallback in both the trace and the audit log.
+**Verify (run this yourself before reporting done):**
+
+```bash
+python -m packages.agents.smoke_score_verify <case_ref>
+GUARDIAN_MAX_SPEND_SGD=1 python -m packages.agents.smoke_score_verify <case_ref>
+EXECUTOR=daytona DAYTONA_API_KEY= python -m packages.agents.smoke_score_verify <case_ref>
+```
+
+Confirm run 1 prints a descending ranking with the top three marked `verified=True` and authoritative prices. Confirm run 2 actually marks at least one candidate `over_cap` — paste the candidate and its `rejected_reason`. Confirm run 3 completes by falling back to `LocalExecutor`, and paste both the trace output and the corresponding `AgentEvent` row proving the fallback was logged.
 
 **Do not implement yet:** `execute`, ordering, payment, failover.
 
@@ -479,7 +682,22 @@
 
 **Constraints:** I6 — exactly one human tap for the whole case. I4 — card data never enters an event, a log, or a cassette.
 
-**Done when:** `CHAOS_PROFILE=none python -m packages.agents.smoke_execute <case_ref>` issues a ticket and returns `succeeded=True` with `len(attempts) == 1`; the same command with `CHAOS_PROFILE=decline` returns `succeeded=True` with `attempts[0].error_code == "604"` and `attempts[1].paid == True`, with zero additional confirmations recorded; and calling `execute` without a confirmation raises.
+**Verify (run this yourself before reporting done):**
+
+```bash
+CHAOS_PROFILE=none python -m packages.agents.smoke_execute <case_ref>
+CHAOS_PROFILE=decline python -m packages.agents.smoke_execute <case_ref_2>
+python -c "
+from packages.agents.executor_agent import ExecutorAgent
+try:
+    ExecutorAgent(...).execute(...)  # call without a prior confirmation
+    print('FAIL: did not raise')
+except Exception as e:
+    print('raised as expected:', type(e).__name__)
+"
+```
+
+Confirm run 1 issues a ticket, returns `succeeded=True` with `len(attempts) == 1`. Confirm run 2 returns `succeeded=True` with `attempts[0].error_code == "604"` and `attempts[1].paid == True`, and count the actual confirmation records in the database to prove zero additional confirmations were created. Confirm the third call, made without a prior `ConfirmationDecision`, actually raises — paste the exception.
 
 **Do not implement yet:** the chaos rewrite itself (Task 25 wires `apply_chaos`; here just honour the raised errors), the receipt, Caretaker.
 
@@ -505,7 +723,19 @@
 
 **Constraints:** Idempotency is enforced by `trigger_fingerprint`, not by the route. Unauthenticated access to `/cases/trigger` returns `401`.
 
-**Done when:** posting the same fixture webhook body twice returns `200` with the same `case_ref` both times and leaves exactly one `RecoveryCase`; and `POST /cases/trigger` without a bearer token returns `401`, with a valid token returns a new `case_ref`.
+**Verify (run this yourself before reporting done):**
+
+```bash
+uvicorn apps.api.main:app --host 127.0.0.1 --port 8000 &
+sleep 2
+curl -s -X POST localhost:8000/webhooks/atlas -H "Content-Type: application/json" -d @fixtures/webhooks/schedule_change.json
+curl -s -X POST localhost:8000/webhooks/atlas -H "Content-Type: application/json" -d @fixtures/webhooks/schedule_change.json
+curl -s -X POST localhost:8000/cases/trigger -d '{"atlas_order_no":"AT-TEST"}'
+curl -s -X POST localhost:8000/cases/trigger -H "Authorization: Bearer $OPERATOR_TOKEN" -d '{"atlas_order_no":"AT-TEST"}'
+kill %1
+```
+
+Confirm both webhook posts return `200` with the same `case_ref`, and query the database to confirm exactly one `RecoveryCase` exists. Confirm the unauthenticated trigger returns `401` and the authenticated one returns a new `case_ref` — paste all four raw responses.
 
 **Do not implement yet:** SSE, the confirm endpoint, any template.
 
@@ -530,7 +760,19 @@
 
 **Constraints:** I5, I6, I8. The stream must survive a client reconnect without losing or duplicating an event.
 
-**Done when:** with a case in flight, `curl -N localhost:8000/cases/RC-0001/stream` prints named events with increasing ids; reconnecting with `-H "Last-Event-ID: <n>"` resumes at `n+1` with no gap and no repeat; `POST /confirm` with a stale nonce returns `4xx`; and a valid confirm transitions the case to `executing`.
+**Verify (run this yourself before reporting done):**
+
+```bash
+curl -N localhost:8000/cases/RC-0001/stream & STREAM_PID=$!
+sleep 3
+kill $STREAM_PID
+curl -N -H "Last-Event-ID: 5" localhost:8000/cases/RC-0001/stream & STREAM_PID2=$!
+sleep 2
+kill $STREAM_PID2
+curl -s -X POST localhost:8000/cases/RC-0001/confirm -d '{"candidate_id":1,"nonce":"stale-or-wrong"}'
+```
+
+Paste the actual streamed events with their ids from both connections and confirm the reconnect resumes at `n+1` with no gap or repeat. Confirm the stale-nonce confirm attempt returns a `4xx` — paste the real response.
 
 **Do not implement yet:** any HTML template, the sandbox grid rendering, the receipt computation.
 
@@ -556,7 +798,16 @@
 
 **Constraints:** No build step, no SPA, no client-side router. Operator routes stay behind the bearer token.
 
-**Done when:** loading `/cases/RC-0001` in a browser shows three panes, the left pane populated from the API with the original itinerary struck through, and the status chip changing without a page reload when the case status changes.
+**Verify (run this yourself before reporting done):**
+
+```bash
+uvicorn apps.api.main:app --host 127.0.0.1 --port 8000 &
+sleep 2
+curl -s localhost:8000/cases/RC-0001 | grep -c "pane"
+kill %1
+```
+
+Actually load `/cases/RC-0001` (curl or a headless check) and confirm three pane containers render, the left pane shows the original itinerary struck through, and the status chip element is present and bound to the SSE status field — paste the relevant HTML fragment, not just a pass/fail claim.
 
 **Do not implement yet:** the trace, the sandbox grid, the option cards, the confirm button, the traveller pane.
 
@@ -580,7 +831,14 @@
 
 **Constraints:** I5 — no token streaming. I6 — the button is the single human tap; there is no way to confirm twice.
 
-**Done when:** running a case end to end shows the trace appending in real time, eight tiles going amber then green in parallel, three verified option cards with visible score components, and one Confirm click transitioning the case to `executing` with the button disabled; killing and reloading the page mid-run rebuilds the identical pane state.
+**Verify (run this yourself before reporting done):**
+
+```bash
+curl -s -X POST localhost:8000/cases/RC-0001/run -H "Authorization: Bearer $OPERATOR_TOKEN"
+# then, in a real browser or headless check, watch the trace, grid, and cards render
+```
+
+Run a real case end to end and confirm: the trace appends in real time, tiles go amber then green in parallel (paste the sequence), three verified cards appear with visible score components, and clicking Confirm actually transitions the case to `executing` with the button disabled afterward. Reload the page mid-run and confirm the pane rebuilds to the identical state.
 
 **Do not implement yet:** the traveller pane, the receipt rendering.
 
@@ -604,7 +862,14 @@
 
 **Constraints:** One language pair only (SPEC §6.5). No account system. No native app.
 
-**Done when:** the right pane renders the traveller view inside a phone frame with the spoken-plan play button working; `SURFACE=traveller` makes `/` land on it; and a signed `/t/{token}` link opens the same view in a fresh browser session with no login.
+**Verify (run this yourself before reporting done):**
+
+```bash
+SURFACE=traveller curl -s localhost:8000/ | grep -c "phone-frame\|traveller"
+curl -s "localhost:8000/t/<signed_token>" -o /dev/null -w "%{http_code}\n"
+```
+
+Confirm the play button element exists and is wired to real audio, `SURFACE=traveller` makes `/` render the traveller view, and a signed `/t/{token}` link returns `200` in a fresh session (no cookies, no login) — paste the actual HTTP status and relevant HTML fragment.
 
 **Do not implement yet:** TTS generation itself, PDF generation, Telegram.
 
@@ -630,7 +895,17 @@
 
 **Constraints:** Chaos alters only the cardholder first name and transport timing. It must never fabricate an Atlas response — the failure must come from Atlas.
 
-**Done when:** `POST /chaos {"profile":"decline"}` then running a case shows a real Atlas `604` in the trace followed by automatic failover to option 2 and a successful ticket, with the UI header showing the active profile; `profile":"3ds"` produces `616`; and switching back to `none` restores the clean happy path.
+**Verify (run this yourself before reporting done):**
+
+```bash
+curl -s -X POST localhost:8000/chaos -d '{"profile":"decline"}' -H "Authorization: Bearer $OPERATOR_TOKEN"
+curl -s -X POST localhost:8000/cases/RC-0002/run -H "Authorization: Bearer $OPERATOR_TOKEN"
+# watch trace for a real 604 followed by failover to option 2
+curl -s -X POST localhost:8000/chaos -d '{"profile":"3ds"}' -H "Authorization: Bearer $OPERATOR_TOKEN"
+curl -s -X POST localhost:8000/chaos -d '{"profile":"none"}' -H "Authorization: Bearer $OPERATOR_TOKEN"
+```
+
+Confirm the `decline` profile actually produces a real Atlas `604` in the trace (paste it) followed by automatic failover to a successful ticket on option 2, with the UI header showing the active profile. Confirm `3ds` produces `616`, and `none` restores the clean happy path — run it once more end to end to prove it.
 
 **Do not implement yet:** the receipt, replay parity checking.
 
@@ -654,7 +929,15 @@
 
 **Constraints:** I1 — receipt numbers are computed, never model-generated. I9 — replay must produce the same step sequence as live.
 
-**Done when:** `ops/demo.sh` runs from a cold start and the rehearsed happy path completes in under 90 seconds three consecutive times; the receipt shows `human_taps == 1` with both counterfactual deltas populated; the parity check prints `PARITY OK` for `live` versus `replay`; and every checkbox in `SPEC.md` §7 is ticked.
+**Verify (run this yourself before reporting done):**
+
+```bash
+bash ops/demo.sh
+bash ops/demo.sh
+bash ops/demo.sh
+```
+
+Run `demo.sh` three consecutive times from a cold start and paste the wall-clock timing for each stage on every run, confirming the rehearsed happy path completes in under 90 seconds each time. Paste the actual receipt showing `human_taps == 1` with both counterfactual deltas populated with real numbers. Paste the parity check's literal `PARITY OK` output for `live` versus `replay`, and go through `docs/SPEC.md` §7 checking off each item against what you actually observed, not what the code intends.
 
 **Do not implement yet:** nothing — this is the last task. After this, freeze features and spend remaining time on reliability and the pitch.
 
@@ -665,9 +948,10 @@
 1. **Open one task at a time.** Read it fully before starting.
 2. **Paste only that task's block** into Cursor with Grok 4.5 selected. Do not paste two tasks into one session, and do not paste this whole file.
 3. Let the agent read `docs/SPEC.md` and `docs/INTERFACES.md` itself — they are named in every task's **Read first**.
-4. **Review the diff against "Files to create/modify."** A file outside that list was not authorised; revert it.
-5. **Run the "Done when" check literally.** It is the only acceptance signal. If it does not pass, iterate inside the same session rather than moving on.
-6. **Start a fresh session for the next task.** Context from the previous task is a liability, not an asset — the frozen docs carry everything needed.
-7. If the agent argues an interface is wrong, it must append the objection to `docs/RISKS.md` and implement the interface as written. Only the human owner edits `SPEC.md` or `INTERFACES.md`; needing to edit them is a signal something upstream broke.
-8. Append every architectural decision to `docs/QODER.md` as you go — it is submission evidence for the Atlas rubric's 20% "Use of Qoder" criterion **[E]**.
-9. **Checkpoint at Tasks 7, 12, 19 and 24** — these map to the strategy's hour-4, hour-12, hour-24 and hour-40 review points. Tag the repo when green.
+4. **The agent runs its own verification.** Per the Verification protocol above, the agent must execute every command in the task's "Verify" block itself, paste the real output, and report `TASK N VERIFIED` or `TASK N NOT VERIFIED`. You do not need to run the commands yourself first — but you should spot-check at least the final command of each task before trusting the verdict, especially on tasks touching money, PII, or the confirmation gate.
+5. **Review the diff against "Files to create/modify."** A file outside that list was not authorised; revert it.
+6. **Read the verdict and pasted output, not just the summary.** If the agent reports `VERIFIED` without visible command output, ask it to re-run and paste the output before you accept it.
+7. **Start a fresh session for the next task.** Context from the previous task is a liability, not an asset — the frozen docs carry everything needed.
+8. If the agent argues an interface is wrong, it must append the objection to `docs/RISKS.md` and implement the interface as written. Only the human owner edits `SPEC.md` or `INTERFACES.md`; needing to edit them is a signal something upstream broke.
+9. Append every architectural decision to `docs/QODER.md` as you go — it is submission evidence for the Atlas rubric's 20% "Use of Qoder" criterion **[E]**.
+10. **Checkpoint at Tasks 7, 12, 19 and 24** — these map to the strategy's hour-4, hour-12, hour-24 and hour-40 review points. Tag the repo when green.
