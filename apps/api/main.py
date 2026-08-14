@@ -3,10 +3,12 @@ from __future__ import annotations
 import hmac
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
+from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.staticfiles import StaticFiles
 
 from apps.api.routes_cases import (
     case_router,
@@ -23,6 +25,7 @@ from apps.api.settings import Surface, get_settings
 from packages.domain.db import create_all
 
 _operator_bearer = HTTPBearer(auto_error=False)
+_WEB_STATIC_DIR = Path(__file__).resolve().parents[1] / "web" / "static"
 
 
 def require_operator(
@@ -57,6 +60,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="Rebound", version="0.1.0", lifespan=lifespan)
+app.mount("/static", StaticFiles(directory=_WEB_STATIC_DIR), name="static")
 
 
 @app.get("/")

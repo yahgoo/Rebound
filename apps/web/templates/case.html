@@ -14,7 +14,9 @@
       id="pane-trace"
       aria-label="Agent trace"
       class="pane min-h-0 rounded-2xl border border-slate-700 bg-slate-900"
-    ></div>
+    >
+      {% include "_pane_trace.html" %}
+    </div>
 
     <div
       id="pane-traveller"
@@ -22,4 +24,5 @@
       class="pane min-h-0 rounded-2xl border border-slate-700 bg-slate-900"
     ></div>
   </div>
+  <script src="{{ url_for('static', path='/trace.js') }}" defer></script>
 {% endblock %}
