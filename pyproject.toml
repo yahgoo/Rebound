@@ -1,0 +1,23 @@
+[project]
+name = "rebound"
+version = "0.1.0"
+description = "Autonomous recovery agent for cancelled low-cost-carrier flights"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "httpx",
+    "sqlmodel",
+    "pydantic>=2",
+    "pydantic-settings",
+    "jinja2",
+    "python-multipart",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["apps*", "packages*"]
