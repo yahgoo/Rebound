@@ -1,4 +1,4 @@
-"""Atlas client. Task 4: search.do only; other methods stubbed."""
+"""Atlas client. Task 4–5: search.do + verify.do + getOfferPrice.do."""
 
 from __future__ import annotations
 
@@ -6,8 +6,14 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Protocol
 
-from packages.atlas.errors import AtlasNoResultsError
-from packages.atlas.models import Offer, SearchRequest, SearchResult, Segment
+from packages.atlas.errors import AtlasNoResultsError, AtlasPriceMovedError
+from packages.atlas.models import (
+    Offer,
+    SearchRequest,
+    SearchResult,
+    Segment,
+    VerifyResult,
+)
 from packages.domain.enums import ChaosProfile
 
 if TYPE_CHECKING:
@@ -17,7 +23,6 @@ if TYPE_CHECKING:
         OrderResult,
         Passenger,
         PayResult,
-        VerifyResult,
     )
 
 
@@ -127,6 +132,124 @@ def _offer_from_routing(routing: dict) -> Offer:
     )
 
 
+def _routing_total_price(routing: dict) -> Decimal:
+    """Single-adult purchase total — same formula as search (I1, no invention)."""
+    return (
+        _decimal(routing.get("adultPrice"))
+        + _decimal(routing.get("adultTax"))
+        + _decimal(routing.get("transactionFeePerPax"))
+    )
+
+
+def _price_changed_from_verify(body: dict) -> bool:
+    """Compare verified price to search price using Atlas priceChange [E]."""
+    pc = body.get("priceChange")
+    if not isinstance(pc, dict):
+        return False
+    if "isPriceChange" in pc:
+        return bool(pc["isPriceChange"])
+    # Fallback: reconstruct original vs new adult totals from priceChange fields.
+    original = _decimal(pc.get("originalAdultPrice")) + _decimal(
+        pc.get("originalAdultTax")
+    )
+    new = _decimal(pc.get("newAdultPrice")) + _decimal(pc.get("newAdultTax"))
+    if original or new:
+        return original != new
+    return False
+
+
+def _offer_id_from_routing(routing: dict, *, fallback: str) -> str:
+    fid = routing.get("fid")
+    if fid not in (None, ""):
+        return str(fid).strip()
+    rid = routing.get("routingIdentifier")
+    if rid not in (None, ""):
+        return str(rid)
+    return fallback
+
+
+def _verify_result_from_body(
+    body: dict, *, fallback_routing_identifier: str
+) -> VerifyResult:
+    routing = body.get("routing") if isinstance(body.get("routing"), dict) else {}
+    session_raw = body.get("sessionId")
+    if session_raw in (None, ""):
+        raise AtlasNoResultsError(
+            code=str(body.get("status", "missing_session")),
+            message="verify.do succeeded but returned no sessionId",
+        )
+    session_id = str(session_raw)
+    price = _routing_total_price(routing)
+    currency = str(routing.get("currency") or "")
+    offer_id = _offer_id_from_routing(
+        routing, fallback=fallback_routing_identifier
+    )
+    price_changed = _price_changed_from_verify(body)
+    return VerifyResult(
+        offer_id=offer_id,
+        session_id=session_id,
+        verified=True,
+        price=price,
+        currency=currency,
+        price_changed=price_changed,
+        raw=dict(body),
+    )
+
+
+def _verify_result_from_offer_price(body: dict, *, offer_id: str) -> VerifyResult:
+    """Map getOfferPrice.do Fulfilment response onto VerifyResult.
+
+    Preserves OfferId from the response when present; otherwise echoes the
+    request OfferId unchanged [E]. Ticketing-window fields (e.g. expireTime)
+    stay in raw for later order/pay gates.
+    """
+    data = body.get("data")
+    offer: dict = {}
+    session_id = ""
+    price = Decimal("0")
+    currency = ""
+    returned_id = offer_id
+
+    if isinstance(data, list) and data:
+        first = data[0] if isinstance(data[0], dict) else {}
+        maybe_offer = first.get("offer") if isinstance(first.get("offer"), dict) else first
+        if isinstance(maybe_offer, dict):
+            offer = maybe_offer
+        # Fulfilment issues OfferId, not sessionId; keep session empty.
+        session_id = str(first.get("sessionId") or body.get("sessionId") or "")
+
+    if offer:
+        rid = offer.get("offerID") or offer.get("offerId") or offer.get("OfferId")
+        if rid not in (None, ""):
+            returned_id = str(rid)  # preserve Atlas OfferId unchanged
+        pax_fares = offer.get("paxFares") or []
+        if isinstance(pax_fares, list):
+            for pf in pax_fares:
+                if not isinstance(pf, dict):
+                    continue
+                if str(pf.get("paxType") or "").upper() != "ADT":
+                    continue
+                price_obj = pf.get("price") if isinstance(pf.get("price"), dict) else {}
+                price = _decimal(price_obj.get("baseAmount")) + _decimal(
+                    price_obj.get("taxes")
+                )
+                currency = str(price_obj.get("currency") or currency)
+                break
+
+    if not currency:
+        currency = str(body.get("currency") or offer.get("currency") or "")
+
+    return VerifyResult(
+        offer_id=returned_id,
+        session_id=session_id,
+        verified=True,
+        price=price,
+        currency=currency,
+        price_changed=False,
+        raw=dict(body),
+    )
+
+
 def _search_payload(request: SearchRequest) -> dict:
     # Field names from resources.atriptech.com search.do OpenAPI (not invented).
     return {
@@ -179,20 +302,71 @@ class AtlasClient:
 
         return SearchResult(session_id=session_id, offers=offers, raw=dict(body))
 
-    async def verify(self, *, session_id: str, offer_id: str) -> VerifyResult:
-        """POST verify.do. Sets price_changed; raises AtlasPriceMovedError
-        only if the caller passed expected_price via verify_strict()."""
-        raise NotImplementedError("Task 5")
+    async def verify(self, *, routing_identifier: str) -> VerifyResult:
+        """POST verify.do with the Offer.routing_identifier from search [E].
+
+        Required wire input is routingIdentifier (not offer_id / fid).
+        routingIdentifier must be ≤6 hours old when verify is called [E].
+
+        On success, Atlas issues a NEW sessionId on the verify response
+        (valid ~2 hours for order.do) [E]. That sessionId is newly minted
+        here — it is not echoed from search, which never returned one.
+
+        Sets price_changed by comparing the verified price to the search
+        price. Raises AtlasPriceMovedError only via verify_strict().
+        """
+        rid = str(routing_identifier or "").strip()
+        if not rid:
+            raise AtlasNoResultsError(
+                code="missing_routing_identifier",
+                message="verify requires a non-empty routingIdentifier from search",
+            )
+
+        # Wire field from resources.atriptech.com verify.do OpenAPI (required).
+        body = await self._transport.post(
+            "verify.do",
+            {"routingIdentifier": rid},
+        )
+        return _verify_result_from_body(body, fallback_routing_identifier=rid)
 
     async def verify_strict(
-        self, *, session_id: str, offer_id: str, expected_price: Decimal
+        self, *, routing_identifier: str, expected_price: Decimal
     ) -> VerifyResult:
-        """Raises AtlasPriceMovedError when the verified price differs."""
-        raise NotImplementedError("Task 5")
+        """Like verify(), then raises AtlasPriceMovedError when the
+        verified price differs from expected_price."""
+        result = await self.verify(routing_identifier=routing_identifier)
+        expected = _decimal(expected_price)
+        if result.price != expected:
+            raise AtlasPriceMovedError(
+                code="price_moved",
+                message=(
+                    f"verified price {result.price} differs from "
+                    f"expected {expected}"
+                ),
+                old_price=expected,
+                new_price=result.price,
+            )
+        return result
 
     async def get_offer_price(self, *, offer_id: str) -> VerifyResult:
-        """POST getOfferPrice.do. Preserves OfferId [E]."""
-        raise NotImplementedError("Task 5")
+        """POST getOfferPrice.do. Preserves OfferId [E].
+
+        Fulfilment path: Atlas returns offerID on the response; we carry it
+        through unchanged on VerifyResult.offer_id. The 5-minute ticketing
+        window is a Fulfilment/order constraint [E] — preserved in raw when
+        Atlas surfaces deadline fields (e.g. expireTime).
+        """
+        oid = str(offer_id or "").strip()
+        if not oid:
+            raise AtlasNoResultsError(
+                code="missing_offer_id",
+                message="get_offer_price requires a non-empty OfferId",
+            )
+        # Preserve OfferId on the wire exactly as provided (do not invent
+        # segment payloads here). Live OpenAPI also documents a segments-
+        # based create path; OfferId preservation is the Task 5 contract.
+        body = await self._transport.post("getOfferPrice.do", {"offerId": oid})
+        return _verify_result_from_offer_price(body, offer_id=oid)
 
     async def order(
         self,

@@ -1,4 +1,4 @@
-"""Atlas wire models (INTERFACES.md §1.1). Task 4: search types only."""
+"""Atlas wire models (INTERFACES.md §1.1). Task 4–5: search + verify types."""
 
 from __future__ import annotations
 
@@ -47,6 +47,18 @@ class SearchRequest(BaseModel):
 
 
 class SearchResult(BaseModel):
-    session_id: str  # MUST be preserved for verify.do [E]
+    session_id: str  # NOT a live search.do field [E]. search.do
+    # does not issue sessionId; verify.do does (§1.2). Kept only for
+    # backward compat with Task 4 (empty string). Do not rely on it.
     offers: list[Offer]
+    raw: dict
+
+
+class VerifyResult(BaseModel):
+    offer_id: str
+    session_id: str  # newly issued by verify.do for order.do (~2h) [E]
+    verified: bool
+    price: Decimal  # authoritative; may differ from the search price
+    currency: str
+    price_changed: bool
     raw: dict
