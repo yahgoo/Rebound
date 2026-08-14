@@ -1,12 +1,14 @@
-"""Interpreter agent — text → RecoveryIntent constraints (I1, I4).
+"""Interpreter agent — multimodal → RecoveryIntent constraints (I1, I4).
 
 Zone C egress order (mandatory):
-  1. guardian.redaction.redact on all text
-  2. build ModelRequest from redacted text only
-  3. assert_no_pii on the final request payload
-  4. only then router.generate_structured
+  1. guardian.redaction.redact on all text (when text is supplied)
+  2. redact_image_metadata on every image; assert no EXIF remains
+  3. build ModelRequest (redacted text + stripped images + audio)
+  4. assert_no_pii on the final request payload
+  5. only then router.generate_structured
 
-Voice/photo accepted on the input type but raise NotImplementedError (Task 16).
+Safe to run concurrently with an early search when an orchestrator allows it;
+search must never depend on an unvalidated / low-confidence intent.
 """
 
 from __future__ import annotations
@@ -25,7 +27,7 @@ from packages.atlas.models import Segment
 from packages.domain.enums import Actor
 from packages.domain.models import RecoveryIntent
 from packages.guardian.audit import AgentEventIn, write_event
-from packages.guardian.redaction import assert_no_pii, redact
+from packages.guardian.redaction import assert_no_pii, redact, redact_image_metadata
 from packages.router.base import AudioPart, ImagePart, ModelRequest, ModelRouter
 
 _PROMPT_PATH = Path(__file__).resolve().parent / "prompts" / "interpreter.md"
@@ -114,42 +116,60 @@ class Interpreter:
         self._clarifications: dict[int, str] = {}
 
     async def interpret(self, payload: InterpreterInput) -> RecoveryIntent:
-        """Guardian.redact runs on all text BEFORE egress. Structured output only.
-        When confidence is below threshold, sets needs_clarification and asks —
-        never guesses.
+        """Guardian.redact on text and redact_image_metadata on images BEFORE egress.
+        Structured output only. When confidence is below threshold, sets
+        needs_clarification and asks — never guesses.
         """
-        if payload.voice is not None:
-            raise NotImplementedError(
-                "Interpreter voice input is not implemented yet (Task 16)"
+        raw_kinds = _raw_input_kinds(payload)
+        if not raw_kinds:
+            raise ValueError(
+                "InterpreterInput requires at least one of text, voice, or photo"
             )
-        if payload.photo is not None:
-            raise NotImplementedError(
-                "Interpreter photo input is not implemented yet (Task 16)"
-            )
-        if not payload.text or not payload.text.strip():
-            raise ValueError("InterpreterInput.text is required for text-only mode")
 
         await self._write_event(
             case_id=payload.case_id,
             step=_STEP_STARTED,
             summary="interpretation started",
-            payload={"raw_input_kinds": ["text"]},
+            payload={"raw_input_kinds": raw_kinds},
         )
 
-        # --- I4 egress gate: redact → assert_no_pii → router (never reverse) ---
-        redacted = redact(payload.text)
+        # --- I4 egress gate: redact → strip EXIF → assert_no_pii → router ---
+        redacted_text = ""
+        kinds_found: list[str] = []
+        if payload.text is not None and payload.text.strip():
+            redacted = redact(payload.text)
+            redacted_text = redacted.text
+            kinds_found = list(redacted.kinds_found)
+
+        images: list[ImagePart] = []
+        if payload.photo is not None:
+            clean = redact_image_metadata(payload.photo.data)
+            _assert_no_exif(clean)
+            images.append(
+                ImagePart(mime_type=payload.photo.mime_type, data=clean)
+            )
+
+        audio: list[AudioPart] = []
+        if payload.voice is not None:
+            audio.append(payload.voice)
+
         user_prompt = _build_user_prompt(
-            redacted_text=redacted.text,
+            redacted_text=redacted_text,
             original_itinerary=payload.original_itinerary,
-            kinds_found=redacted.kinds_found,
+            kinds_found=kinds_found,
+            has_voice=bool(audio),
+            has_photo=bool(images),
         )
         request = ModelRequest(
             system=self._system_prompt,
             prompt=user_prompt,
+            images=images,
+            audio=audio,
             temperature=0.0,
             max_output_tokens=2048,
-            # Operational override: INTERFACES default 20s is tight for Gemini 3.6.
-            timeout_seconds=60.0,
+            # Operational override: INTERFACES default 20s is tight for Gemini
+            # 3.6 + multimodal (esp. audio).
+            timeout_seconds=90.0,
         )
         egress_payload = _request_payload_for_pii_check(request)
         assert_no_pii(egress_payload)
@@ -159,7 +179,6 @@ class Interpreter:
         )
         draft = _drop_itinerary_shaped(draft)
 
-        raw_kinds = ["text"]
         if draft.confidence < _CONFIDENCE_THRESHOLD:
             question = (draft.clarification_question or "").strip() or (
                 _fallback_clarification(draft.language)
@@ -258,16 +277,72 @@ class Interpreter:
             session.commit()
 
 
+def _raw_input_kinds(payload: InterpreterInput) -> list[str]:
+    """Exact modalities supplied — SPEC: text | voice | photo."""
+    kinds: list[str] = []
+    if payload.text is not None and payload.text.strip():
+        kinds.append("text")
+    if payload.voice is not None:
+        kinds.append("voice")
+    if payload.photo is not None:
+        kinds.append("photo")
+    return kinds
+
+
+def _assert_no_exif(image_bytes: bytes) -> None:
+    """Raise if JPEG still carries an APP1 Exif segment after redaction (I4)."""
+    if len(image_bytes) < 2 or image_bytes[:2] != b"\xff\xd8":
+        return
+    i = 2
+    n = len(image_bytes)
+    while i < n:
+        if image_bytes[i] != 0xFF:
+            break
+        while i < n and image_bytes[i] == 0xFF:
+            i += 1
+        if i >= n:
+            break
+        marker = image_bytes[i]
+        i += 1
+        if marker in (0xD8, 0xD9) or 0xD0 <= marker <= 0xD7 or marker == 0x01:
+            continue
+        if i + 2 > n:
+            break
+        seglen = int.from_bytes(image_bytes[i : i + 2], "big")
+        if seglen < 2 or i + seglen > n:
+            break
+        payload = image_bytes[i + 2 : i + seglen]
+        if marker == 0xE1 and (
+            payload.startswith(b"Exif\x00\x00") or payload.startswith(b"Exif\x00")
+        ):
+            raise AssertionError(
+                "EXIF remains after redact_image_metadata — refusing Zone C egress (I4)"
+            )
+        if marker == 0xDA:
+            break
+        i += seglen
+
+
 def _request_payload_for_pii_check(request: ModelRequest) -> dict:
-    """Final Zone C request shape — strings only for assert_no_pii."""
+    """Final Zone C request shape — strings/metadata only for assert_no_pii."""
     return {
         "system": request.system,
         "prompt": request.prompt,
         "temperature": request.temperature,
         "max_output_tokens": request.max_output_tokens,
         "timeout_seconds": request.timeout_seconds,
-        "images": [],
-        "audio": [],
+        "images": [
+            {"mime_type": img.mime_type, "nbytes": len(img.data)}
+            for img in request.images
+        ],
+        "audio": [
+            {
+                "mime_type": part.mime_type,
+                "nbytes": len(part.data),
+                "duration_seconds": part.duration_seconds,
+            }
+            for part in request.audio
+        ],
     }
 
 
@@ -282,6 +357,8 @@ def _build_user_prompt(
     redacted_text: str,
     original_itinerary: list[Segment],
     kinds_found: list[str],
+    has_voice: bool,
+    has_photo: bool,
 ) -> str:
     # Context for origin/destination candidates only — no flight numbers/carriers (I1).
     airports: list[dict[str, str]] = []
@@ -294,14 +371,38 @@ def _build_user_prompt(
                 "arrival_at": _fmt_when(seg.arrival_at),
             }
         )
-    return (
-        f"Current time (UTC): {_fmt_when(datetime.now(UTC))}\n"
-        f"Redaction kinds applied: {kinds_found or []}\n"
-        f"Original itinerary airports (constraints context only; "
-        f"do NOT emit flights/carriers/prices/offer ids):\n"
-        f"{json.dumps(airports, separators=(',', ':'))}\n\n"
-        f"Traveller message (already Guardian-redacted):\n{redacted_text}\n"
-    )
+    parts = [
+        f"Current time (UTC): {_fmt_when(datetime.now(UTC))}",
+        f"Redaction kinds applied: {kinds_found or []}",
+        (
+            "Original itinerary airports (constraints context only; "
+            "do NOT emit flights/carriers/prices/offer ids):"
+        ),
+        json.dumps(airports, separators=(",", ":")),
+        "",
+    ]
+    if redacted_text.strip():
+        parts.append("Traveller message (already Guardian-redacted):")
+        parts.append(redacted_text)
+        parts.append("")
+    if has_voice:
+        parts.append(
+            "A voice note is attached to this request. Transcribe it and extract "
+            "constraints only. Do not invent destinations, deadlines, budgets, or "
+            "mobility needs that the voice does not state."
+        )
+        parts.append("")
+    if has_photo:
+        parts.append(
+            "A departure-board (or similar) photo is attached. Read it for "
+            "disruption facts as evidence only — cancelled/delayed status, "
+            "airports shown, times shown. Photo-derived text is never an offer "
+            "(I1): do not emit flight numbers, carriers, prices, or itineraries "
+            "as recommendations; airport codes may appear only in "
+            "origin_candidates / destination_candidates when clearly visible."
+        )
+        parts.append("")
+    return "\n".join(parts)
 
 
 def _drop_itinerary_shaped(draft: InterpreterIntentDraft) -> InterpreterIntentDraft:
