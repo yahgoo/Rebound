@@ -1,14 +1,27 @@
-"""Atlas client. Task 4–5: search.do + verify.do + getOfferPrice.do."""
+"""Atlas client. Task 4–6: search + verify + order.do + pay.do."""
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+import re
+import time
+from copy import deepcopy
+from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
-from packages.atlas.errors import AtlasNoResultsError, AtlasPriceMovedError
+from packages.atlas.errors import (
+    AtlasError,
+    AtlasNoResultsError,
+    AtlasPaymentDeclinedError,
+    AtlasPriceMovedError,
+    AtlasThreeDSRequiredError,
+)
 from packages.atlas.models import (
+    CardDetails,
     Offer,
+    OrderResult,
+    Passenger,
+    PayResult,
     SearchRequest,
     SearchResult,
     Segment,
@@ -17,13 +30,39 @@ from packages.atlas.models import (
 from packages.domain.enums import ChaosProfile
 
 if TYPE_CHECKING:
-    from packages.atlas.models import (
-        CardDetails,
-        OrderDetails,
-        OrderResult,
-        Passenger,
-        PayResult,
-    )
+    from packages.atlas.models import OrderDetails
+
+# Atlas SGT (GMT+8) for tktLimitTime [E].
+_SGT = timezone(timedelta(hours=8))
+
+# Wire / model keys that must never appear in persisted or exception payloads (I4).
+_CARD_SECRET_KEYS = frozenset(
+    {
+        "number",
+        "cardnumber",
+        "card_number",
+        "pan",
+        "cvv",
+        "cvc",
+        "cardcvv",
+        "securitycode",
+        "security_code",
+        "holder_given_name",
+        "holder_surname",
+        "holdername",
+        "holder_name",
+        "cardholder",
+        "cardholdername",
+        "card_holder",
+        "card_holder_name",
+        "cardholderfirstname",
+        "cardholderlastname",
+        "cardholdermiddle",
+        "creditcard",
+    }
+)
+
+_PAN_SHAPE = re.compile(r"(?<!\d)(\d{13,19})(?!\d)")
 
 
 class AtlasTransport(Protocol):
@@ -264,6 +303,192 @@ def _search_payload(request: SearchRequest) -> dict:
     }
 
 
+def _norm_key(key: str) -> str:
+    return key.replace("-", "").replace("_", "").lower()
+
+
+def _is_card_secret_key(key: str) -> bool:
+    return _norm_key(key) in _CARD_SECRET_KEYS or key.lower() in _CARD_SECRET_KEYS
+
+
+def _strip_card_secrets(obj: Any) -> Any:
+    """Deep-copy with card fields removed — safe for cassette / logs (I4)."""
+    if isinstance(obj, dict):
+        out: dict[str, Any] = {}
+        for k, v in obj.items():
+            if _is_card_secret_key(str(k)):
+                continue
+            out[str(k)] = _strip_card_secrets(v)
+        return out
+    if isinstance(obj, list):
+        return [_strip_card_secrets(v) for v in obj]
+    return obj
+
+
+def _assert_no_card_secrets(obj: Any, *, context: str) -> None:
+    """Raise if PAN-shaped digits or card keys remain (I4 — assert in code)."""
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if _is_card_secret_key(str(k)):
+                raise AssertionError(f"I4: card field {k!r} leaked into {context}")
+            _assert_no_card_secrets(v, context=context)
+        return
+    if isinstance(obj, list):
+        for v in obj:
+            _assert_no_card_secrets(v, context=context)
+        return
+    if isinstance(obj, str):
+        for match in _PAN_SHAPE.finditer(obj):
+            digits = match.group(1)
+            # Luhn-valid runs are PANs; refuse them in any persisted/exception text.
+            if _luhn_ok(digits):
+                raise AssertionError(f"I4: PAN-shaped value leaked into {context}")
+
+
+def _luhn_ok(digits: str) -> bool:
+    total = 0
+    reverse = digits[::-1]
+    for i, ch in enumerate(reverse):
+        n = ord(ch) - 48
+        if i % 2 == 1:
+            n *= 2
+            if n > 9:
+                n -= 9
+        total += n
+    return total % 10 == 0
+
+
+def _passenger_wire_name(p: Passenger) -> str:
+    # Atlas: Family Name/Given Name [E].
+    return f"{p.surname.strip()}/{p.given_name.strip()}"
+
+
+def _passenger_to_wire(p: Passenger) -> dict:
+    body: dict[str, Any] = {
+        "name": _passenger_wire_name(p),
+        "passengerType": 0,  # adult — Task 6 smoke is one adult
+        "gender": "M",  # required on wire; not on Passenger model
+        "birthday": p.date_of_birth.strftime("%Y%m%d"),
+    }
+    if p.nationality:
+        body["nationality"] = p.nationality.upper()
+    if p.passport_number:
+        body["cardType"] = "PP"
+        body["cardNum"] = p.passport_number
+        if p.nationality:
+            body["cardIssuePlace"] = p.nationality.upper()
+        # Expiry required by some carriers when a document is present [E].
+        body["cardExpired"] = "20351231"
+    return body
+
+
+def _parse_tkt_limit_time(raw: object) -> datetime | None:
+    """Parse order.do tktLimitTime (`yyyy-MM-dd HH:mm:ss` SGT) to UTC [E]."""
+    if raw in (None, ""):
+        return None
+    text = str(raw).strip()
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+        try:
+            local = datetime.strptime(text, fmt).replace(tzinfo=_SGT)
+            return local.astimezone(UTC)
+        except ValueError:
+            continue
+    try:
+        return _atlas_local_dt(text)
+    except ValueError:
+        return None
+
+
+def _order_result_from_body(body: dict) -> OrderResult:
+    order_no = body.get("orderNo")
+    if order_no in (None, ""):
+        raise AtlasNoResultsError(
+            code=str(body.get("status", "missing_order_no")),
+            message="order.do succeeded but returned no orderNo",
+        )
+    total = _decimal(body.get("totalPrice")) + _decimal(body.get("totalTransactionFee"))
+    currency = str(body.get("currency") or "")
+    status = str(body.get("status", "0"))
+    return OrderResult(
+        order_no=str(order_no),
+        status=status,
+        ticketing_deadline=_parse_tkt_limit_time(body.get("tktLimitTime")),
+        total_amount=total,
+        currency=currency,
+        raw=dict(body),
+    )
+
+
+def _card_to_credit_card(card: CardDetails) -> dict:
+    # pay.do creditCard fields from resources.atriptech.com OpenAPI [E].
+    year = int(card.expiry_year)
+    yy = year % 100 if year >= 100 else year
+    return {
+        "cardNumber": str(card.number),
+        "cardCVV": str(card.cvv),
+        "cardExpireMonth": f"{int(card.expiry_month):02d}",
+        "cardExpireYear": f"{yy:02d}",
+        "cardHolderLastName": card.holder_surname,
+        "cardHolderFirstName": card.holder_given_name,
+    }
+
+
+def _ticket_numbers_from_pay(body: dict) -> list[str]:
+    tickets: list[str] = []
+    for key in ("ticketNos", "ticketNumbers", "ticket_numbers"):
+        raw = body.get(key)
+        if isinstance(raw, list):
+            tickets.extend(str(t) for t in raw if t not in (None, ""))
+    pax_infos = body.get("paxTicketInfos")
+    if isinstance(pax_infos, list):
+        for info in pax_infos:
+            if not isinstance(info, dict):
+                continue
+            for t in info.get("ticketNos") or []:
+                if t not in (None, ""):
+                    tickets.append(str(t))
+    # Preserve order, drop dupes.
+    seen: set[str] = set()
+    out: list[str] = []
+    for t in tickets:
+        if t not in seen:
+            seen.add(t)
+            out.append(t)
+    return out
+
+
+def _pnr_from_pay(body: dict) -> str | None:
+    for key in ("pnr", "pnrCode", "airlinePnr"):
+        val = body.get(key)
+        if val not in (None, ""):
+            return str(val)
+    return None
+
+
+def _payment_methods_from_order(body: dict) -> list[int]:
+    options = body.get("paymentOptions")
+    methods: list[int] = []
+    if isinstance(options, list):
+        for opt in options:
+            if not isinstance(opt, dict):
+                continue
+            pm = opt.get("paymentMethod")
+            if pm is None:
+                continue
+            try:
+                methods.append(int(pm))
+            except (TypeError, ValueError):
+                continue
+    routing = body.get("routing") if isinstance(body.get("routing"), dict) else {}
+    for pm in routing.get("supportPaymentMethods") or []:
+        try:
+            methods.append(int(pm))
+        except (TypeError, ValueError):
+            continue
+    # Stable unique.
+    return list(dict.fromkeys(methods))
+
+
 class AtlasClient:
     def __init__(
         self,
@@ -273,6 +498,9 @@ class AtlasClient:
     ) -> None:
         self._transport = transport
         self._chaos = chaos
+        # (session_id, offer_id) pairs from successful verify.do only (I2).
+        self._verified: set[tuple[str, str]] = set()
+        self._last_order_payment_methods: list[int] = []
 
     async def search(self, request: SearchRequest) -> SearchResult:
         """POST search.do. Raises AtlasNoResultsError on zero offers."""
@@ -327,7 +555,10 @@ class AtlasClient:
             "verify.do",
             {"routingIdentifier": rid},
         )
-        return _verify_result_from_body(body, fallback_routing_identifier=rid)
+        result = _verify_result_from_body(body, fallback_routing_identifier=rid)
+        # I2 gate: only verify-issued session_id + offer_id may unlock order.do.
+        self._verified.add((result.session_id, result.offer_id))
+        return result
 
     async def verify_strict(
         self, *, routing_identifier: str, expected_price: Decimal
@@ -368,6 +599,38 @@ class AtlasClient:
         body = await self._transport.post("getOfferPrice.do", {"offerId": oid})
         return _verify_result_from_offer_price(body, offer_id=oid)
 
+    async def _post_pay_isolated(self, payload_full: dict) -> dict:
+        """POST pay.do: Atlas sees card data; cassette/logs never do (I4)."""
+        persisted = _strip_card_secrets(deepcopy(payload_full))
+        _assert_no_card_secrets(persisted, context="pay cassette/log payload")
+
+        recorder = getattr(self._transport, "recorder", None)
+        if recorder is not None:
+            # LiveTransport records the same dict it posts — disable that, then
+            # record only the card-stripped copy so CVV/PAN never reach disk.
+            self._transport.recorder = None
+            try:
+                started = time.perf_counter()
+                body = await self._transport.post("pay.do", payload_full)
+                latency_ms = max(0, int((time.perf_counter() - started) * 1000))
+            finally:
+                self._transport.recorder = recorder
+            safe_response = _strip_card_secrets(deepcopy(body))
+            _assert_no_card_secrets(safe_response, context="pay cassette response")
+            await recorder.record(
+                path="pay.do",
+                payload=persisted,
+                response=safe_response,
+                latency_ms=latency_ms,
+            )
+            return body
+
+        # ReplayTransport keys on payload — use the same stripped shape we record.
+        if type(self._transport).__name__ == "ReplayTransport":
+            return await self._transport.post("pay.do", persisted)
+
+        return await self._transport.post("pay.do", payload_full)
+
     async def order(
         self,
         *,
@@ -377,13 +640,148 @@ class AtlasClient:
         contact_email: str,
         contact_phone: str,
     ) -> OrderResult:
-        """POST order.do. Caller MUST have a successful verify first (I2)."""
-        raise NotImplementedError("Task 6")
+        """POST order.do. Caller MUST have a successful verify first (I2).
+
+        session_id MUST be the sessionId newly issued by verify.do
+        (not a search-time value — search.do does not return one) [E].
+        """
+        sid = str(session_id or "").strip()
+        oid = str(offer_id or "").strip()
+        if not sid or not oid:
+            raise AtlasError(
+                code="unverified_offer",
+                message=(
+                    "order.do refused: session_id and offer_id from a "
+                    "successful verify.do are required (I2)"
+                ),
+            )
+        if (sid, oid) not in self._verified:
+            raise AtlasError(
+                code="unverified_offer",
+                message=(
+                    "order.do refused: session_id/offer_id were not issued by "
+                    "a successful verify.do on this client (I2)"
+                ),
+            )
+        if not passengers:
+            raise AtlasError(
+                code="missing_passengers",
+                message="order.do requires at least one passenger",
+            )
+
+        # Wire fields from create-order.md OpenAPI [E].
+        # verify path: sessionId is required; offerId is for the get-offer path
+        # only — do not send search fid as offerId (causes Atlas 9999).
+        contact_name = _passenger_wire_name(passengers[0])
+        payload: dict[str, Any] = {
+            "sessionId": sid,
+            "passengers": [_passenger_to_wire(p) for p in passengers],
+            "contact": {
+                "name": contact_name,
+                "email": contact_email,
+                "mobile": contact_phone,
+            },
+        }
+
+        body = await self._transport.post("order.do", payload)
+        result = _order_result_from_body(body)
+        self._last_order_payment_methods = _payment_methods_from_order(body)
+        return result
 
     async def pay(self, *, order_no: str, card: CardDetails) -> PayResult:
         """POST pay.do. Raises AtlasPaymentDeclinedError on 604 and
         AtlasThreeDSRequiredError on 616 [E]. Card data never logged (I4)."""
-        raise NotImplementedError("Task 6")
+        ono = str(order_no or "").strip()
+        if not ono:
+            raise AtlasError(
+                code="missing_order_no",
+                message="pay.do requires a non-empty orderNo",
+            )
+        if not isinstance(card, CardDetails):
+            raise TypeError("pay requires CardDetails")
+
+        # I4: repr/str must already redact; assert before any I/O or raise path.
+        _assert_no_card_secrets(repr(card), context="CardDetails.repr")
+        _assert_no_card_secrets(str(card), context="CardDetails.str")
+
+        methods = self._last_order_payment_methods
+        # Prefer VCC (3) / MoR (5) when the order supports card; else deposit (1).
+        # Current sandbox JKT→SUB fares are deposit-only [E observed].
+        if 3 in methods:
+            payment_method = 3
+        elif 5 in methods:
+            payment_method = 5
+        elif 1 in methods:
+            payment_method = 1
+        else:
+            payment_method = 3
+
+        payload: dict[str, Any] = {
+            "orderNo": ono,
+            "paymentMethod": payment_method,
+        }
+        if payment_method in {3, 5}:
+            payload["creditCard"] = _card_to_credit_card(card)
+        else:
+            # Deposit: do not put card fields on the wire or cassette (I4).
+            payload["creditCard"] = None
+
+        try:
+            body = await self._post_pay_isolated(payload)
+        except (AtlasPaymentDeclinedError, AtlasThreeDSRequiredError) as exc:
+            # Surface code on a PayResult attached to the exception (INTERFACES).
+            _assert_no_card_secrets(exc.message, context="pay exception message")
+            _assert_no_card_secrets(repr(card), context="pay exception card repr")
+            exc.pay_result = PayResult(  # type: ignore[attr-defined]
+                order_no=ono,
+                paid=False,
+                ticket_numbers=[],
+                pnr=None,
+                error_code=str(exc.code),
+                raw={},
+            )
+            raise
+
+        code = str(body.get("status", body.get("errorCode", "0")))
+        if code == "604":
+            pay_result = PayResult(
+                order_no=ono,
+                paid=False,
+                ticket_numbers=[],
+                pnr=None,
+                error_code="604",
+                raw=dict(body),
+            )
+            err = AtlasPaymentDeclinedError(
+                code="604",
+                message=str(body.get("msg") or "Payment declined"),
+            )
+            err.pay_result = pay_result  # type: ignore[attr-defined]
+            raise err
+        if code == "616":
+            pay_result = PayResult(
+                order_no=ono,
+                paid=False,
+                ticket_numbers=[],
+                pnr=None,
+                error_code="616",
+                raw=dict(body),
+            )
+            err = AtlasThreeDSRequiredError(
+                code="616",
+                message=str(body.get("msg") or "3DS required"),
+            )
+            err.pay_result = pay_result  # type: ignore[attr-defined]
+            raise err
+
+        return PayResult(
+            order_no=str(body.get("orderNo") or ono),
+            paid=code in {"0", "00"},
+            ticket_numbers=_ticket_numbers_from_pay(body),
+            pnr=_pnr_from_pay(body),
+            error_code=None if code in {"0", "00"} else code,
+            raw=dict(body),
+        )
 
     async def query_order_details(self, *, order_no: str) -> OrderDetails:
         """POST queryOrderDetails.do. Authoritative state (I7)."""

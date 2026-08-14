@@ -1,0 +1,50 @@
+{
+  "key": "210e267ade7736aafd191a79c72b8fcadd9f411b9080f068c94f7b203de1497b",
+  "path": "order.do",
+  "request": {
+    "sessionId": "bfe11d32-407e-4544-bfb5-645ee9044e92",
+    "passengers": [
+      {
+        "name": "Passenger/Test",
+        "passengerType": 0,
+        "gender": "M",
+        "birthday": "[REDACTED]",
+        "cardType": "PP",
+        "cardNum": "[REDACTED]",
+        "nationality": "SG",
+        "cardIssuePlace": "SG"
+      }
+    ],
+    "contact": {
+      "name": "Passenger/Test",
+      "email": "rebound.smoke@example.com",
+      "mobile": "0065-91234567"
+    },
+    "offerId": "PAmFztlmMorxTQWCduvopyUcZPlzd2wlh2OYx5jbCoBb4n-A9ioSzA.."
+  },
+  "response": {
+    "sessionId": "bfe11d32-407e-4544-bfb5-645ee9044e92",
+    "offerId": null,
+    "orderNo": null,
+    "originalOrderNo": null,
+    "ticketOrderNo": null,
+    "totalPrice": null,
+    "totalTransactionFee": null,
+    "currency": null,
+    "vendorTotalPrice": null,
+    "vendorCurrency": null,
+    "tktLimitTime": null,
+    "pnrCode": null,
+    "includeExtraBaggage": null,
+    "paxTicketInfos": null,
+    "routing": null,
+    "duplicateOrders": null,
+    "paymentOptions": null,
+    "status": 9999,
+    "msg": "Internal error. Retry once; if persists, contact support with full request/response.",
+    "requestId": null,
+    "clientRequestId": null
+  },
+  "latency_ms": 59,
+  "recorded_at": "2026-08-14T07:40:57.666593Z"
+}

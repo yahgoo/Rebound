@@ -255,7 +255,7 @@ Confirm it prints `verified=True` with an authoritative price and a non-empty ne
 python -m packages.atlas.smoke_order_pay
 python -c "
 from packages.atlas.models import CardDetails
-c = CardDetails(number='4111111111111111', cvv='123', holder_given_name='Test', holder_family_name='User')
+c = CardDetails(number='4111111111111111', cvv='123', holder_given_name='Test', holder_surname='User', expiry_month=12, expiry_year=2030)
 r = repr(c)
 assert not any(seg.isdigit() and len(seg) > 4 for seg in __import__('re').findall(r'\d+', r)), r
 print('repr redaction OK:', r)

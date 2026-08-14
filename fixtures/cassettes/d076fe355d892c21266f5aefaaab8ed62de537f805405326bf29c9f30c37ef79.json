@@ -1,0 +1,22 @@
+{
+  "key": "d076fe355d892c21266f5aefaaab8ed62de537f805405326bf29c9f30c37ef79",
+  "path": "pay.do",
+  "request": {
+    "orderNo": "TESTA20260814154123960",
+    "paymentMethod": 1
+  },
+  "response": {
+    "orderNo": "TESTA20260814154123960",
+    "pnrCode": "H2EVKU",
+    "paymentMethod": 1,
+    "airlines": [
+      "QG"
+    ],
+    "status": 0,
+    "msg": "success",
+    "requestId": null,
+    "clientRequestId": null
+  },
+  "latency_ms": 126,
+  "recorded_at": "2026-08-14T07:41:24.288600Z"
+}

@@ -1,11 +1,11 @@
-"""Atlas wire models (INTERFACES.md §1.1). Task 4–5: search + verify types."""
+"""Atlas wire models (INTERFACES.md §1.1). Task 4–6: search + verify + order/pay."""
 
 from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class Segment(BaseModel):
@@ -61,4 +61,63 @@ class VerifyResult(BaseModel):
     price: Decimal  # authoritative; may differ from the search price
     currency: str
     price_changed: bool
+    raw: dict
+
+
+class Passenger(BaseModel):
+    """Zone A only. Never serialised into a sandbox or a model prompt (I4)."""
+
+    given_name: str
+    surname: str
+    date_of_birth: datetime
+    passport_number: str | None = None
+    nationality: str | None = None
+
+
+class OrderResult(BaseModel):
+    order_no: str  # MUST be preserved [E]
+    status: str
+    ticketing_deadline: datetime | None = None  # 5-minute window after order [E]
+    total_amount: Decimal
+    currency: str
+    raw: dict
+
+
+class CardDetails(BaseModel):
+    """NEVER logged, NEVER persisted, NEVER leaves Zone A (I4).
+
+    `holder_given_name` is also the chaos lever: "Reject" -> 604,
+    "Three DS" -> 616, both documented Atlas sandbox triggers [E].
+    """
+
+    holder_given_name: str
+    holder_surname: str
+    number: str
+    expiry_month: int
+    expiry_year: int
+    cvv: str
+
+    def __repr__(self) -> str:
+        # MUST redact; no PAN/CVV in any repr or traceback (I4).
+        last4 = self.number[-4:] if len(self.number) >= 4 else "****"
+        return (
+            "CardDetails("
+            f"holder_given_name={self.holder_given_name!r}, "
+            f"holder_surname={self.holder_surname!r}, "
+            f"number='****{last4}', "
+            f"expiry_month={int(self.expiry_month)}, "
+            f"expiry_year={int(self.expiry_year)}, "
+            "cvv='***')"
+        )
+
+    def __str__(self) -> str:
+        return repr(self)
+
+
+class PayResult(BaseModel):
+    order_no: str
+    paid: bool
+    ticket_numbers: list[str] = Field(default_factory=list)
+    pnr: str | None = None
+    error_code: str | None = None  # "604" / "616" surface here as well as raising
     raw: dict
