@@ -7,6 +7,7 @@ from collections.abc import AsyncIterator
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from apps.api.routes_cases import case_router, operator_case_router
 from apps.api.routes_webhook import (
     database_path,
     operator_router,
@@ -51,7 +52,9 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="Rebound", version="0.1.0", lifespan=lifespan)
 app.include_router(webhook_router)
+app.include_router(case_router)
 app.include_router(operator_router, dependencies=[Depends(require_operator)])
+app.include_router(operator_case_router, dependencies=[Depends(require_operator)])
 
 
 @app.get("/healthz")
