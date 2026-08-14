@@ -100,7 +100,12 @@ def _install_order_probes(interpreter: Interpreter, router: ModelRouter) -> list
     return order
 
 
-async def _run(text: str) -> int:
+async def _run(
+    text: str, *, original_itinerary: list[Segment] | None = None
+) -> int:
+    itinerary = (
+        _sample_itinerary() if original_itinerary is None else original_itinerary
+    )
     with tempfile.TemporaryDirectory(prefix="rebound-smoke-interpreter-") as tmp:
         db_path = str(Path(tmp) / "smoke_interpreter.db")
         create_all(db_path)
@@ -111,11 +116,16 @@ async def _run(text: str) -> int:
         interpreter = Interpreter(router, factory)
         call_order = _install_order_probes(interpreter, router)
 
+        print(
+            f"original_itinerary_len={len(itinerary)} "
+            f"segments={[ (s.origin, s.destination) for s in itinerary ]}",
+            flush=True,
+        )
         intent = await interpreter.interpret(
             InterpreterInput(
                 case_id=case_id,
                 text=text,
-                original_itinerary=_sample_itinerary(),
+                original_itinerary=itinerary,
             )
         )
 
@@ -128,6 +138,21 @@ async def _run(text: str) -> int:
             )
             return 1
 
+        origins = intent.origin_candidates_list
+        print(f"origin_candidates={origins!r}", flush=True)
+        if not itinerary and origins:
+            print(
+                "ERROR: origin_candidates must be empty when "
+                "original_itinerary=[] and text has no origin evidence",
+                flush=True,
+            )
+            return 1
+        if not itinerary:
+            print(
+                f"origin_candidates empty with no itinerary evidence → {origins == []}",
+                flush=True,
+            )
+
         if intent.confidence < 0.6:
             question = await interpreter.clarification_question(intent)
             print("=== clarification (confidence < 0.6) ===", flush=True)
@@ -139,6 +164,8 @@ async def _run(text: str) -> int:
                 f"must_arrive_by={intent.must_arrive_by!r} "
                 f"budget_ceiling_sgd={intent.budget_ceiling_sgd!r} "
                 f"mobility_notes={intent.mobility_notes!r} "
+                f"origin_candidates={origins!r} "
+                f"destination_candidates={intent.destination_candidates_list!r} "
                 f"raw_input_kinds={intent.raw_input_kinds_list!r}",
                 flush=True,
             )
@@ -151,7 +178,7 @@ async def _run(text: str) -> int:
             "passenger_count": intent.passenger_count,
             "must_arrive_by": intent.must_arrive_by,
             "budget_ceiling_sgd": intent.budget_ceiling_sgd,
-            "origin_candidates": intent.origin_candidates_list,
+            "origin_candidates": origins,
             "destination_candidates": intent.destination_candidates_list,
             "mobility_notes": intent.mobility_notes,
             "language": intent.language,
@@ -172,11 +199,20 @@ async def _run(text: str) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
+    empty_itinerary = False
+    if "--empty-itinerary" in args:
+        empty_itinerary = True
+        args = [a for a in args if a != "--empty-itinerary"]
     if not args:
-        print("usage: python -m packages.agents.smoke_interpreter <text>", file=sys.stderr)
+        print(
+            "usage: python -m packages.agents.smoke_interpreter "
+            "[--empty-itinerary] <text>",
+            file=sys.stderr,
+        )
         return 2
     text = " ".join(args)
-    return asyncio.run(_run(text))
+    itinerary: list[Segment] | None = [] if empty_itinerary else None
+    return asyncio.run(_run(text, original_itinerary=itinerary))
 
 
 if __name__ == "__main__":
