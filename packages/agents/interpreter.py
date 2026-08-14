@@ -126,13 +126,6 @@ class Interpreter:
                 "InterpreterInput requires at least one of text, voice, or photo"
             )
 
-        await self._write_event(
-            case_id=payload.case_id,
-            step=_STEP_STARTED,
-            summary="interpretation started",
-            payload={"raw_input_kinds": raw_kinds},
-        )
-
         # --- I4 egress gate: redact → strip EXIF → assert_no_pii → router ---
         redacted_text = ""
         kinds_found: list[str] = []
@@ -140,6 +133,17 @@ class Interpreter:
             redacted = redact(payload.text)
             redacted_text = redacted.text
             kinds_found = list(redacted.kinds_found)
+
+        await self._write_event(
+            case_id=payload.case_id,
+            step=_STEP_STARTED,
+            summary="interpretation started",
+            payload={
+                "raw_input_kinds": raw_kinds,
+                # Guardian UI pane reads this off trace events (Task 23).
+                "kinds_found": kinds_found,
+            },
+        )
 
         images: list[ImagePart] = []
         if payload.photo is not None:
@@ -199,6 +203,7 @@ class Interpreter:
                     "language": draft.language,
                     "clarification_question": question,
                     "raw_input_kinds": raw_kinds,
+                    "kinds_found": kinds_found,
                 },
             )
             return intent
@@ -244,6 +249,7 @@ class Interpreter:
                 "mobility_notes": intent_out.mobility_notes,
                 "raw_input_kinds": intent_out.raw_input_kinds_list,
                 "intent_id": intent_out.id,
+                "kinds_found": kinds_found,
             },
         )
         return intent_out

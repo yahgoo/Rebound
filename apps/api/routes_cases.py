@@ -456,6 +456,9 @@ async def confirm_case(
             "human_taps": 1,
         },
     )
+    # Executor also writes this to the DB; emit SSE here so the operator
+    # chip/button lock on Confirm without waiting for background execute.
+    await _set_case_status(case, "executing")
     background_tasks.add_task(
         _execute_confirmed,
         case,
