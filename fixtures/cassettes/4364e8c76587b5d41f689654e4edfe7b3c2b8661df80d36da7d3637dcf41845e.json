@@ -1,0 +1,22 @@
+{
+  "key": "4364e8c76587b5d41f689654e4edfe7b3c2b8661df80d36da7d3637dcf41845e",
+  "path": "pay.do",
+  "request": {
+    "orderNo": "TESTA20260816130326041",
+    "paymentMethod": 1
+  },
+  "response": {
+    "orderNo": "TESTA20260816130326041",
+    "pnrCode": "R9WNCD",
+    "paymentMethod": 1,
+    "airlines": [
+      "QG"
+    ],
+    "status": 0,
+    "msg": "success",
+    "requestId": null,
+    "clientRequestId": null
+  },
+  "latency_ms": 134,
+  "recorded_at": "2026-08-16T05:03:26.319309Z"
+}

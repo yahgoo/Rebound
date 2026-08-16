@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
+import os
 import re
 from copy import deepcopy
 from datetime import UTC, datetime
@@ -67,6 +69,52 @@ _SENSITIVE_KEYS = frozenset(
 
 _PAN_RE = re.compile(r"(?<!\d)(\d{13,19})(?!\d)")
 _REDACTED = "[REDACTED]"
+
+
+# Local-only dev/demo salt for key material over sensitive identity fields
+# (order.do passengers: birthday / cardNum / dob …). Never persisted into any
+# cassette file (I4). Sourced from env so live and replay processes derive the
+# same salted-hash placeholder: override with CASSETTE_KEY_SALT, falling back
+# to the Atlas client secret (already exported by ops/demo.sh from .env). An
+# empty salt is still deterministic, so the unit determinism check holds even
+# without env.
+def _key_salt() -> bytes:
+    raw = (
+        os.environ.get("CASSETTE_KEY_SALT")
+        or os.environ.get("ATLAS_CLIENT_SECRET")
+        or ""
+    )
+    return hashlib.sha256(raw.encode("utf-8")).digest()
+
+
+def _sensitive_key_placeholder() -> str:
+    """Salted hmac over the redaction sentinel, used inside key material.
+
+    Live payloads carry the raw identity value; replay-reconstructed payloads
+    carry "[REDACTED]" (I4 redaction at record time, see §14). Hashing the
+    common sentinel with a fixed local salt makes order.do keys mode-invariant
+    — live and replay derive identical keys from the same passenger — while
+    raw PII never enters key material (I4/I9).
+    """
+    return hmac.new(
+        _key_salt(), _REDACTED.encode("utf-8"), hashlib.sha256
+    ).hexdigest()
+
+
+def _keyify(obj: Any) -> Any:
+    """Canonicalise sensitive fields for key material (I4/I9)."""
+    placeholder = _sensitive_key_placeholder()
+    if isinstance(obj, dict):
+        out: dict[str, Any] = {}
+        for k, v in obj.items():
+            if _is_sensitive_key(str(k)):
+                out[k] = placeholder
+            else:
+                out[k] = _keyify(v)
+        return out
+    if isinstance(obj, list):
+        return [_keyify(v) for v in obj]
+    return obj
 
 
 def _norm_key(key: str) -> str:
@@ -164,8 +212,11 @@ class CassetteRecorder:
     @staticmethod
     def key_for(path: str, payload: dict) -> str:
         """Deterministic and stable. Volatile fields (timestamps, nonces,
-        sessionId) are excluded from the key so replay matches on intent."""
-        material = path + "\n" + _canonical_json(_strip_volatile(payload))
+        sessionId) are excluded from the key so replay matches on intent;
+        sensitive identity fields (birthday, cardNum, …) become salted-hmac
+        placeholders so live and replay derive the same key (I9) while raw
+        PII never enters key material (I4)."""
+        material = path + "\n" + _canonical_json(_keyify(_strip_volatile(payload)))
         return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
     async def record(

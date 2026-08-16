@@ -1,0 +1,575 @@
+{
+  "key": "8f190b1953ad9528652e5d431c11d3b7aa0647d111dbca7b2a294245879e6c9c",
+  "path": "verify.do",
+  "request": {
+    "routingIdentifier": "SktUX1NVQl8xXzIwMjYwOTE0X18xXzBfMHxLSEEyNDA3OV9hcGlfMXwxfDM2LjQ5XzM2LjQ5XzcuOTFfMC4wMF84MC44OV9VU0R8SktUX1NVQl8xXzIwMjYwOTE0X18xXzBfMF5DR0stUUc3MTYtLVNVQi0yMDI2MDkxNDE1MDUtMjAyNjA5MTQxNjQ1LUVDTy0xLV4zNi40OV8zNi40OV83LjkxXzAuMDBfODAuODleQVFHX0FRR15eQVFHMUpLVFNVQjQwMDIwMjYwOTE0XklEUl42NTAzNDUuMDBeNjUwMzQ1LjAwXjE0MDk1OC43NF4xfDB8MjAyNjA4MTYxMTUwMDl8MHwxNzg2ODUyMjA5NDQ3MTdkZjJkZWZ8fHx8fDAuMDB8M3wwfHxub3JtYWx8ZmFsc2V8MjAyNi0wOC0xNiAxMDowMDoxN3w=.PK2/T+s7rv1EYmmWs8dSGZqmHFYFXVCovIma2UdjLG8="
+  },
+  "response": {
+    "sessionId": "74bbea0f-42b3-4ccb-85b8-e9564935bf25",
+    "maxSeats": 4,
+    "routing": {
+      "fid": "DRfY1hXv19ajppP4UI5y6SUcZPlzd2wlh2OYx5jbCoBb4n-A9ioSzA..",
+      "routingIdentifier": "SktUX1NVQl8xXzIwMjYwOTE0X18xXzBfMHxLSEEyNDA3OV9hcGlfMXwxfDM2LjQ5XzM2LjQ5XzcuOTFfMC4wMF84MC44OV9VU0R8SktUX1NVQl8xXzIwMjYwOTE0X18xXzBfMF5DR0stUUc3MTYtLVNVQi0yMDI2MDkxNDE1MDUtMjAyNjA5MTQxNjQ1LUVDTy0xLV4zNi40OV8zNi40OV83LjkxXzAuMDBfODAuODleQVFHX0FRR15eQVFHMUpLVFNVQjQwMDIwMjYwOTE0XklEUl42NTAzNDUuMDBeNjUwMzQ1LjAwXjE0MDk1OC43NF4wfDB8MjAyNjA4MTYxMTUwMjl8MHwxNzg2ODUyMjI5NTc4NmY1ZjFmM2R8fHx8fDAuMDB8M3wwfHxub3JtYWx8ZmFsc2V8fA==.fz+AfR21mC36o0MbLxX94qwEgDAiWg4PKsLlUrgPHww=",
+      "supportCreditTransPayment": "0",
+      "supportPaymentMethods": [
+        1
+      ],
+      "currency": "USD",
+      "adultPrice": 36.34,
+      "adultTax": 0.15,
+      "adultDetails": [
+        {
+          "code": "farePrice",
+          "type": "base",
+          "amount": 36.34,
+          "description": "Ticket Price Markup",
+          "markupDetailId": null,
+          "version": null,
+          "direction": null
+        },
+        {
+          "code": "tax",
+          "type": "tax",
+          "amount": 0.15,
+          "description": "Tax",
+          "markupDetailId": null,
+          "version": null,
+          "direction": null
+        }
+      ],
+      "childPrice": 36.34,
+      "childTax": 0.15,
+      "childDetails": [
+        {
+          "code": "farePrice",
+          "type": "base",
+          "amount": 36.34,
+          "description": "Ticket Price Markup",
+          "markupDetailId": null,
+          "version": null,
+          "direction": null
+        },
+        {
+          "code": "tax",
+          "type": "tax",
+          "amount": 0.15,
+          "description": "Tax",
+          "markupDetailId": null,
+          "version": null,
+          "direction": null
+        }
+      ],
+      "infantPrice": 7.91,
+      "infantTax": 0.0,
+      "infantDetails": [
+        {
+          "code": "farePrice",
+          "type": "base",
+          "amount": 7.91,
+          "description": "Ticket Price Markup",
+          "markupDetailId": null,
+          "version": null,
+          "direction": null
+        },
+        {
+          "code": "tax",
+          "type": "tax",
+          "amount": 0,
+          "description": "Tax",
+          "markupDetailId": null,
+          "version": null,
+          "direction": null
+        }
+      ],
+      "childMandatorySeatingFee": null,
+      "infantAllowed": true,
+      "transactionFeePerPax": 0.0,
+      "transactionFee": 0.0,
+      "transactionFeeMode": "PER_PAX",
+      "nationalityType": 0,
+      "nationality": "",
+      "suitAge": "",
+      "PaxType": "ADT",
+      "fromSegments": [
+        {
+          "segmentIndex": 1,
+          "carrier": "QG",
+          "flightNumber": "QG716",
+          "depAirport": "CGK",
+          "depTime": "202609141505",
+          "arrAirport": "SUB",
+          "arrTime": "202609141645",
+          "stopCities": "",
+          "duration": 100,
+          "codeShare": false,
+          "cabin": "",
+          "cabinClass": 1,
+          "seatCount": 4,
+          "aircraftCode": "320",
+          "depTerminal": "",
+          "arrTerminal": "",
+          "operatingCarrier": "",
+          "operatingFlightnumber": "",
+          "fareFamily": "ECO"
+        }
+      ],
+      "retSegments": [],
+      "combineIndexs": [],
+      "rule": {
+        "hasBaggage": 1,
+        "baggageElements": [
+          {
+            "segmentNo": 1,
+            "baggageType": "StandardCheckInBaggage",
+            "passengerType": 0,
+            "baggagePiece": 0,
+            "baggageWeight": 15,
+            "baggageSize": "L+W+H<=158cm",
+            "isAllWeight": false
+          },
+          {
+            "segmentNo": 1,
+            "baggageType": "StandardCheckInBaggage",
+            "passengerType": 1,
+            "baggagePiece": 0,
+            "baggageWeight": 15,
+            "baggageSize": "L+W+H<=158cm",
+            "isAllWeight": false
+          },
+          {
+            "segmentNo": 1,
+            "baggageType": "StandardCheckInBaggage",
+            "passengerType": 2,
+            "baggagePiece": 0,
+            "baggageWeight": 0,
+            "baggageSize": "L+W+H<=158cm",
+            "isAllWeight": false
+          },
+          {
+            "segmentNo": 1,
+            "baggageType": "CabinBaggageOverheadLocker",
+            "passengerType": 0,
+            "baggagePiece": 1,
+            "baggageWeight": 7,
+            "baggageSize": "56*36*23cm",
+            "isAllWeight": false
+          },
+          {
+            "segmentNo": 1,
+            "baggageType": "CabinBaggageOverheadLocker",
+            "passengerType": 1,
+            "baggagePiece": 1,
+            "baggageWeight": 7,
+            "baggageSize": "56*36*23cm",
+            "isAllWeight": false
+          },
+          {
+            "segmentNo": 1,
+            "baggageType": "CabinBaggageOverheadLocker",
+            "passengerType": 2,
+            "baggagePiece": 0,
+            "baggageWeight": 0,
+            "baggageSize": "56*36*23cm",
+            "isAllWeight": false
+          }
+        ],
+        "refundRules": [
+          {
+            "refundType": 0,
+            "refundStatus": "T",
+            "refundMethod": null,
+            "refundFee": 0.0,
+            "currency": "IDR",
+            "refNoshow": "T",
+            "refNoShowCondition": 0,
+            "refNoshowFee": 0.0,
+            "ruleDetailList": [
+              {
+                "ruleId": 43904,
+                "status": "H",
+                "refundMethod": "CashBackToOriginalPayment",
+                "startMinute": 525600,
+                "endMinute": 4320,
+                "amount": 162586.25,
+                "currency": "IDR"
+              },
+              {
+                "ruleId": 43905,
+                "status": "H",
+                "refundMethod": "CashBackToOriginalPayment",
+                "startMinute": 4320,
+                "endMinute": 2880,
+                "amount": 325172.5,
+                "currency": "IDR"
+              },
+              {
+                "ruleId": 43906,
+                "status": "H",
+                "refundMethod": "CashBackToOriginalPayment",
+                "startMinute": 2880,
+                "endMinute": 1440,
+                "amount": 390207.0,
+                "currency": "IDR"
+              },
+              {
+                "ruleId": 43907,
+                "status": "H",
+                "refundMethod": "CashBackToOriginalPayment",
+                "startMinute": 1440,
+                "endMinute": 720,
+                "amount": 455241.5,
+                "currency": "IDR"
+              },
+              {
+                "ruleId": 43908,
+                "status": "H",
+                "refundMethod": "CashBackToOriginalPayment",
+                "startMinute": 720,
+                "endMinute": 240,
+                "amount": 520276.0,
+                "currency": "IDR"
+              },
+              {
+                "ruleId": 43909,
+                "status": "H",
+                "refundMethod": "CashBackToOriginalPayment",
+                "startMinute": 240,
+                "endMinute": 30,
+                "amount": 585310.5,
+                "currency": "IDR"
+              },
+              {
+                "ruleId": 43910,
+                "status": "T",
+                "refundMethod": "CashBackToOriginalPayment",
+                "startMinute": 30,
+                "endMinute": 0,
+                "amount": 0.0,
+                "currency": "IDR"
+              },
+              {
+                "ruleId": 43911,
+                "status": "T",
+                "refundMethod": "CashBackToOriginalPayment",
+                "startMinute": 0,
+                "endMinute": -525600,
+                "amount": 0.0,
+                "currency": "IDR"
+              }
+            ]
+          }
+        ],
+        "changesRules": [
+          {
+            "changesType": 0,
+            "changesStatus": "T",
+            "changesFee": 0.0,
+            "currency": "IDR",
+            "revNoshow": "T",
+            "revNoShowCondition": 0,
+            "revNoshowFee": 0.0,
+            "ruleDetailList": [
+              {
+                "ruleId": 43898,
+                "status": "H",
+                "refundMethod": null,
+                "startMinute": 525600,
+                "endMinute": 10080,
+                "amount": 150000.0,
+                "currency": "IDR"
+              },
+              {
+                "ruleId": 43899,
+                "status": "H",
+                "refundMethod": null,
+                "startMinute": 10080,
+                "endMinute": 4320,
+                "amount": 200000.0,
+                "currency": "IDR"
+              },
+              {
+                "ruleId": 43900,
+                "status": "H",
+                "refundMethod": null,
+                "startMinute": 4320,
+                "endMinute": 1440,
+                "amount": 250000.0,
+                "currency": "IDR"
+              },
+              {
+                "ruleId": 43901,
+                "status": "H",
+                "refundMethod": null,
+                "startMinute": 1440,
+                "endMinute": 120,
+                "amount": 300000.0,
+                "currency": "IDR"
+              },
+              {
+                "ruleId": 43902,
+                "status": "T",
+                "refundMethod": null,
+                "startMinute": 120,
+                "endMinute": 0,
+                "amount": 0.0,
+                "currency": "IDR"
+              },
+              {
+                "ruleId": 43903,
+                "status": "T",
+                "refundMethod": null,
+                "startMinute": 0,
+                "endMinute": -525600,
+                "amount": 0.0,
+                "currency": "IDR"
+              }
+            ]
+          }
+        ],
+        "serviceElements": [
+          {
+            "hasFreeSeat": 0,
+            "hasFreeMeal": 0
+          }
+        ]
+      },
+      "ancillaryProductElements": [
+        {
+          "segmentIndex": 1,
+          "endSegmentIndex": null,
+          "productCode": "SCI_BAG_40KG",
+          "productName": "StandardCheckInBaggage",
+          "productType": 1,
+          "canPurchaseWithTicket": 1,
+          "canPurchasePostTicket": 1,
+          "price": 118.14,
+          "currency": "USD",
+          "vendorPrice": 2105773.15,
+          "vendorCurrency": "IDR",
+          "clientTechnicalServiceFee": 0,
+          "clientTechnicalServiceFeeMode": null,
+          "auxBaggageElement": {
+            "piece": 0,
+            "weight": 40,
+            "isAllWeight": true,
+            "size": ""
+          },
+          "offerId": null,
+          "maxQty": 1,
+          "minQty": 1,
+          "categoryCode": "StandardCheckInBaggage",
+          "ancillaryCode": "SCI_BAG_40KG",
+          "auxSeatElement": null,
+          "displayPrice": null,
+          "displayCurrency": null
+        },
+        {
+          "segmentIndex": 1,
+          "endSegmentIndex": null,
+          "productCode": "SCI_BAG_5KG",
+          "productName": "StandardCheckInBaggage",
+          "productType": 1,
+          "canPurchaseWithTicket": 1,
+          "canPurchasePostTicket": 1,
+          "price": 21.29,
+          "currency": "USD",
+          "vendorPrice": 379365.85,
+          "vendorCurrency": "IDR",
+          "clientTechnicalServiceFee": 0,
+          "clientTechnicalServiceFeeMode": null,
+          "auxBaggageElement": {
+            "piece": 0,
+            "weight": 5,
+            "isAllWeight": true,
+            "size": ""
+          },
+          "offerId": null,
+          "maxQty": 1,
+          "minQty": 1,
+          "categoryCode": "StandardCheckInBaggage",
+          "ancillaryCode": "SCI_BAG_5KG",
+          "auxSeatElement": null,
+          "displayPrice": null,
+          "displayCurrency": null
+        },
+        {
+          "segmentIndex": 1,
+          "endSegmentIndex": null,
+          "productCode": "SCI_BAG_10KG",
+          "productName": "StandardCheckInBaggage",
+          "productType": 1,
+          "canPurchaseWithTicket": 1,
+          "canPurchasePostTicket": 1,
+          "price": 38.67,
+          "currency": "USD",
+          "vendorPrice": 689255.14,
+          "vendorCurrency": "IDR",
+          "clientTechnicalServiceFee": 0,
+          "clientTechnicalServiceFeeMode": null,
+          "auxBaggageElement": {
+            "piece": 0,
+            "weight": 10,
+            "isAllWeight": true,
+            "size": ""
+          },
+          "offerId": null,
+          "maxQty": 1,
+          "minQty": 1,
+          "categoryCode": "StandardCheckInBaggage",
+          "ancillaryCode": "SCI_BAG_10KG",
+          "auxSeatElement": null,
+          "displayPrice": null,
+          "displayCurrency": null
+        },
+        {
+          "segmentIndex": 1,
+          "endSegmentIndex": null,
+          "productCode": "SCI_BAG_20KG",
+          "productName": "StandardCheckInBaggage",
+          "productType": 1,
+          "canPurchaseWithTicket": 1,
+          "canPurchasePostTicket": 1,
+          "price": 108.56,
+          "currency": "USD",
+          "vendorPrice": 1934960.57,
+          "vendorCurrency": "IDR",
+          "clientTechnicalServiceFee": 0,
+          "clientTechnicalServiceFeeMode": null,
+          "auxBaggageElement": {
+            "piece": 0,
+            "weight": 20,
+            "isAllWeight": true,
+            "size": ""
+          },
+          "offerId": null,
+          "maxQty": 1,
+          "minQty": 1,
+          "categoryCode": "StandardCheckInBaggage",
+          "ancillaryCode": "SCI_BAG_20KG",
+          "auxSeatElement": null,
+          "displayPrice": null,
+          "displayCurrency": null
+        },
+        {
+          "segmentIndex": 1,
+          "endSegmentIndex": null,
+          "productCode": "SCI_BAG_30KG",
+          "productName": "StandardCheckInBaggage",
+          "productType": 1,
+          "canPurchaseWithTicket": 1,
+          "canPurchasePostTicket": 1,
+          "price": 148.29,
+          "currency": "USD",
+          "vendorPrice": 2643230.11,
+          "vendorCurrency": "IDR",
+          "clientTechnicalServiceFee": 0,
+          "clientTechnicalServiceFeeMode": null,
+          "auxBaggageElement": {
+            "piece": 0,
+            "weight": 30,
+            "isAllWeight": true,
+            "size": ""
+          },
+          "offerId": null,
+          "maxQty": 1,
+          "minQty": 1,
+          "categoryCode": "StandardCheckInBaggage",
+          "ancillaryCode": "SCI_BAG_30KG",
+          "auxSeatElement": null,
+          "displayPrice": null,
+          "displayCurrency": null
+        }
+      ],
+      "vendorFare": null,
+      "bundleOptions": [],
+      "links": [
+        {
+          "carrier": "QG",
+          "kind": "terms",
+          "link": "https://www.citilink.co.id/en/condition-of-carriage",
+          "description": "Carrier terms and conditions"
+        }
+      ],
+      "separateBookings": false,
+      "refreshTime": null,
+      "expireTime": null,
+      "displayFare": null,
+      "ancillarySupported": [
+        "luggage"
+      ],
+      "cardChargeList": null,
+      "tags": null,
+      "riskSellout": false,
+      "residentCode": null
+    },
+    "bookingRequirement": {
+      "passenger": {
+        "birthday": "[REDACTED]",
+        "cardIssuePlace": {
+          "type": "string",
+          "required": false,
+          "description": null,
+          "maxLength": null
+        },
+        "cardNum": "[REDACTED]",
+        "passengerType": {
+          "type": "int",
+          "required": true,
+          "description": null,
+          "maxLength": null
+        },
+        "gender": {
+          "type": "string",
+          "required": true,
+          "description": null,
+          "maxLength": null
+        },
+        "nationality": {
+          "type": "string",
+          "required": true,
+          "description": null,
+          "maxLength": null
+        },
+        "cardExpired": {
+          "type": "string",
+          "required": false,
+          "description": null,
+          "maxLength": null
+        },
+        "name": {
+          "type": "string",
+          "required": true,
+          "description": null,
+          "maxLength": "32/32"
+        },
+        "cardType": {
+          "type": "string",
+          "required": false,
+          "description": null,
+          "maxLength": null
+        }
+      }
+    },
+    "priceChange": {
+      "isPriceChange": false,
+      "originalAdultPrice": 36.34,
+      "originalAdultTax": 0.15,
+      "originalChildPrice": 36.34,
+      "originalChildTax": 0.15,
+      "originalInfantPrice": 7.91,
+      "originalInfantTax": 0.0,
+      "newAdultPrice": 36.34,
+      "newAdultTax": 0.15,
+      "newChildPrice": 36.34,
+      "newChildTax": 0.15,
+      "newInfantPrice": 7.91,
+      "newInfantTax": 0.0
+    },
+    "status": 0,
+    "msg": "success",
+    "requestId": null,
+    "clientRequestId": null
+  },
+  "latency_ms": 171,
+  "recorded_at": "2026-08-16T03:50:29.591563Z"
+}

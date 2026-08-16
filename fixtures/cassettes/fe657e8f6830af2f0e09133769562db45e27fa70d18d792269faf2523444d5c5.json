@@ -1,0 +1,45 @@
+{
+  "key": "fe657e8f6830af2f0e09133769562db45e27fa70d18d792269faf2523444d5c5",
+  "path": "order.do",
+  "request": {
+    "sessionId": "a36001d8-aa49-49f0-96b4-8096bd9dc0cb",
+    "passengers": [
+      {
+        "name": "Passenger/Test",
+        "passengerType": 0,
+        "gender": "M",
+        "birthday": "[REDACTED]"
+      }
+    ],
+    "contact": {
+      "name": "Passenger/Test",
+      "email": "rebound.operator@example.com",
+      "mobile": "0065-00000000"
+    }
+  },
+  "response": {
+    "sessionId": "a36001d8-aa49-49f0-96b4-8096bd9dc0cb",
+    "offerId": null,
+    "orderNo": null,
+    "originalOrderNo": null,
+    "ticketOrderNo": null,
+    "totalPrice": null,
+    "totalTransactionFee": null,
+    "currency": null,
+    "vendorTotalPrice": null,
+    "vendorCurrency": null,
+    "tktLimitTime": null,
+    "pnrCode": null,
+    "includeExtraBaggage": null,
+    "paxTicketInfos": null,
+    "routing": null,
+    "duplicateOrders": null,
+    "paymentOptions": null,
+    "status": 407,
+    "msg": "Passenger information does not meet the requirements: Nationality",
+    "requestId": null,
+    "clientRequestId": null
+  },
+  "latency_ms": 192,
+  "recorded_at": "2026-08-14T16:19:58.077305Z"
+}

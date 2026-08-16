@@ -1,0 +1,22 @@
+{
+  "key": "7519a617ba4ce70e31ddc7e0f6aa6335ef1453be9eb21c9c4e7bebe3d18e8c51",
+  "path": "pay.do",
+  "request": {
+    "orderNo": "TESTA20260816104825953",
+    "paymentMethod": 1
+  },
+  "response": {
+    "orderNo": "TESTA20260816104825953",
+    "pnrCode": "IOCHUS",
+    "paymentMethod": 1,
+    "airlines": [
+      "QG"
+    ],
+    "status": 0,
+    "msg": "success",
+    "requestId": null,
+    "clientRequestId": null
+  },
+  "latency_ms": 138,
+  "recorded_at": "2026-08-16T02:48:26.255202Z"
+}

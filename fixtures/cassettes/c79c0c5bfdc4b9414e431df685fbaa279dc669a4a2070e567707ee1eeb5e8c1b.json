@@ -1,0 +1,22 @@
+{
+  "key": "c79c0c5bfdc4b9414e431df685fbaa279dc669a4a2070e567707ee1eeb5e8c1b",
+  "path": "pay.do",
+  "request": {
+    "orderNo": "TESTA20260815002321968",
+    "paymentMethod": 1
+  },
+  "response": {
+    "orderNo": "TESTA20260815002321968",
+    "pnrCode": "XTMFFP",
+    "paymentMethod": 1,
+    "airlines": [
+      "QG"
+    ],
+    "status": 0,
+    "msg": "success",
+    "requestId": null,
+    "clientRequestId": null
+  },
+  "latency_ms": 265,
+  "recorded_at": "2026-08-14T16:23:22.223580Z"
+}

@@ -1,0 +1,22 @@
+{
+  "key": "579c40838bda135a2cf821ded37fec97c78686ef4d7eb000d36be797a79bd7ac",
+  "path": "pay.do",
+  "request": {
+    "orderNo": "TESTA20260816104600708",
+    "paymentMethod": 1
+  },
+  "response": {
+    "orderNo": "TESTA20260816104600708",
+    "pnrCode": "I8MXYX",
+    "paymentMethod": 1,
+    "airlines": [
+      "QG"
+    ],
+    "status": 0,
+    "msg": "success",
+    "requestId": null,
+    "clientRequestId": null
+  },
+  "latency_ms": 142,
+  "recorded_at": "2026-08-16T02:46:01.003194Z"
+}

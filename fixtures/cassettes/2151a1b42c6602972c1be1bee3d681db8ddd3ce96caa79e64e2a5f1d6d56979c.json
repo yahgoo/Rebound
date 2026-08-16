@@ -1,0 +1,22 @@
+{
+  "key": "2151a1b42c6602972c1be1bee3d681db8ddd3ce96caa79e64e2a5f1d6d56979c",
+  "path": "pay.do",
+  "request": {
+    "orderNo": "TESTA20260816101448634",
+    "paymentMethod": 1
+  },
+  "response": {
+    "orderNo": "TESTA20260816101448634",
+    "pnrCode": "BIHBHF",
+    "paymentMethod": 1,
+    "airlines": [
+      "QG"
+    ],
+    "status": 0,
+    "msg": "success",
+    "requestId": null,
+    "clientRequestId": null
+  },
+  "latency_ms": 218,
+  "recorded_at": "2026-08-16T02:14:49.027158Z"
+}

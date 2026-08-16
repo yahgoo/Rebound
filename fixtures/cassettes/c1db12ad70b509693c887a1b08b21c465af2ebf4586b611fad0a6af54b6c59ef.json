@@ -1,0 +1,22 @@
+{
+  "key": "c1db12ad70b509693c887a1b08b21c465af2ebf4586b611fad0a6af54b6c59ef",
+  "path": "pay.do",
+  "request": {
+    "orderNo": "TESTA20260816135629321",
+    "paymentMethod": 1
+  },
+  "response": {
+    "orderNo": "TESTA20260816135629321",
+    "pnrCode": "POMOG0",
+    "paymentMethod": 1,
+    "airlines": [
+      "QG"
+    ],
+    "status": 0,
+    "msg": "success",
+    "requestId": null,
+    "clientRequestId": null
+  },
+  "latency_ms": 180,
+  "recorded_at": "2026-08-16T05:56:29.685603Z"
+}

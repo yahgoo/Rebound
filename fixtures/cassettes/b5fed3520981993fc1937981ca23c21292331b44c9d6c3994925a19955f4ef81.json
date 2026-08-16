@@ -1,0 +1,22 @@
+{
+  "key": "b5fed3520981993fc1937981ca23c21292331b44c9d6c3994925a19955f4ef81",
+  "path": "pay.do",
+  "request": {
+    "orderNo": "TESTA20260816123153069",
+    "paymentMethod": 1
+  },
+  "response": {
+    "orderNo": "TESTA20260816123153069",
+    "pnrCode": "PDMRAP",
+    "paymentMethod": 1,
+    "airlines": [
+      "QG"
+    ],
+    "status": 0,
+    "msg": "success",
+    "requestId": null,
+    "clientRequestId": null
+  },
+  "latency_ms": 148,
+  "recorded_at": "2026-08-16T04:31:53.366124Z"
+}

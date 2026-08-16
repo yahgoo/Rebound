@@ -1,0 +1,22 @@
+{
+  "key": "280e794368473eacb563042f97b61658d45b5aa490b4c1d9989fe56219c72db8",
+  "path": "pay.do",
+  "request": {
+    "orderNo": "TESTA20260816112041301",
+    "paymentMethod": 1
+  },
+  "response": {
+    "orderNo": "TESTA20260816112041301",
+    "pnrCode": "TWP2F3",
+    "paymentMethod": 1,
+    "airlines": [
+      "QG"
+    ],
+    "status": 0,
+    "msg": "success",
+    "requestId": null,
+    "clientRequestId": null
+  },
+  "latency_ms": 226,
+  "recorded_at": "2026-08-16T03:20:41.682764Z"
+}

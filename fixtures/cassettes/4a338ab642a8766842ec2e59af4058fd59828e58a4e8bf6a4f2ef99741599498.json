@@ -1,0 +1,22 @@
+{
+  "key": "4a338ab642a8766842ec2e59af4058fd59828e58a4e8bf6a4f2ef99741599498",
+  "path": "pay.do",
+  "request": {
+    "orderNo": "TESTA20260816105836223",
+    "paymentMethod": 1
+  },
+  "response": {
+    "orderNo": "TESTA20260816105836223",
+    "pnrCode": "C7JUTY",
+    "paymentMethod": 1,
+    "airlines": [
+      "QG"
+    ],
+    "status": 0,
+    "msg": "success",
+    "requestId": null,
+    "clientRequestId": null
+  },
+  "latency_ms": 141,
+  "recorded_at": "2026-08-16T02:58:36.530956Z"
+}

@@ -1,0 +1,52 @@
+{
+  "key": "8cb38b7debcff399aa4dc0b8c096427e03b61d2fd4229716b892e06bfdb58479",
+  "path": "order.do",
+  "request": {
+    "sessionId": "482da7de-0951-4bd4-9362-d70fed1ce684",
+    "passengers": [
+      {
+        "name": "Au/Mei Lin",
+        "passengerType": 0,
+        "gender": "M",
+        "birthday": "[REDACTED]",
+        "nationality": "SG",
+        "cardType": "PP",
+        "cardNum": "[REDACTED]",
+        "cardIssuePlace": "SG",
+        "cardExpired": "20351231"
+      }
+    ],
+    "contact": {
+      "name": "Au/Mei Lin",
+      "email": "rebound.operator@example.com",
+      "mobile": "0065-91234567"
+    }
+  },
+  "response": {
+    "sessionId": "482da7de-0951-4bd4-9362-d70fed1ce684",
+    "offerId": null,
+    "orderNo": null,
+    "originalOrderNo": null,
+    "ticketOrderNo": null,
+    "totalPrice": null,
+    "totalTransactionFee": null,
+    "currency": null,
+    "vendorTotalPrice": null,
+    "vendorCurrency": null,
+    "tktLimitTime": null,
+    "pnrCode": null,
+    "includeExtraBaggage": null,
+    "paxTicketInfos": null,
+    "routing": null,
+    "duplicateOrders": [
+      "TESTA20260816105951886"
+    ],
+    "paymentOptions": null,
+    "status": 318,
+    "msg": "Duplicate booking: same passenger + flight already exists. Query orders before rebooking.",
+    "requestId": null,
+    "clientRequestId": null
+  },
+  "latency_ms": 112,
+  "recorded_at": "2026-08-16T03:07:08.944889Z"
+}

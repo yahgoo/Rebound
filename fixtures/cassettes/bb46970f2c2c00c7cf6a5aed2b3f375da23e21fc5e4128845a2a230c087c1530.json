@@ -1,0 +1,22 @@
+{
+  "key": "bb46970f2c2c00c7cf6a5aed2b3f375da23e21fc5e4128845a2a230c087c1530",
+  "path": "pay.do",
+  "request": {
+    "orderNo": "TESTA20260815031610981",
+    "paymentMethod": 1
+  },
+  "response": {
+    "orderNo": "TESTA20260815031610981",
+    "pnrCode": "PBUIWT",
+    "paymentMethod": 1,
+    "airlines": [
+      "QG"
+    ],
+    "status": 0,
+    "msg": "success",
+    "requestId": null,
+    "clientRequestId": null
+  },
+  "latency_ms": 227,
+  "recorded_at": "2026-08-14T19:16:11.270593Z"
+}

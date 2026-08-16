@@ -1,0 +1,22 @@
+{
+  "key": "ac5aacbd384a3af7883376ca501d666de8e820d0ce8538132b577a48f1e42996",
+  "path": "pay.do",
+  "request": {
+    "orderNo": "TESTA20260815032223205",
+    "paymentMethod": 1
+  },
+  "response": {
+    "orderNo": "TESTA20260815032223205",
+    "pnrCode": "UWFEE8",
+    "paymentMethod": 1,
+    "airlines": [
+      "QG"
+    ],
+    "status": 0,
+    "msg": "success",
+    "requestId": null,
+    "clientRequestId": null
+  },
+  "latency_ms": 253,
+  "recorded_at": "2026-08-14T19:22:23.541655Z"
+}

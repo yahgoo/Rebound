@@ -1,0 +1,22 @@
+{
+  "key": "f49fee03d257a2466c0fe86e2b065e247f1c119d227da92f1437d44ea967d6ca",
+  "path": "pay.do",
+  "request": {
+    "orderNo": "TESTA20260816103357163",
+    "paymentMethod": 1
+  },
+  "response": {
+    "orderNo": "TESTA20260816103357163",
+    "pnrCode": "VHRHHN",
+    "paymentMethod": 1,
+    "airlines": [
+      "QG"
+    ],
+    "status": 0,
+    "msg": "success",
+    "requestId": null,
+    "clientRequestId": null
+  },
+  "latency_ms": 151,
+  "recorded_at": "2026-08-16T02:33:57.567841Z"
+}

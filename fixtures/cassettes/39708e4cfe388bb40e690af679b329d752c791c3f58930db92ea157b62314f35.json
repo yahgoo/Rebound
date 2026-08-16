@@ -1,0 +1,22 @@
+{
+  "key": "39708e4cfe388bb40e690af679b329d752c791c3f58930db92ea157b62314f35",
+  "path": "pay.do",
+  "request": {
+    "orderNo": "TESTA20260816121839065",
+    "paymentMethod": 1
+  },
+  "response": {
+    "orderNo": "TESTA20260816121839065",
+    "pnrCode": "KDKCRN",
+    "paymentMethod": 1,
+    "airlines": [
+      "QG"
+    ],
+    "status": 0,
+    "msg": "success",
+    "requestId": null,
+    "clientRequestId": null
+  },
+  "latency_ms": 130,
+  "recorded_at": "2026-08-16T04:18:39.386429Z"
+}

@@ -1,0 +1,22 @@
+{
+  "key": "b20d07fe44af746f81865f0986615f2e556ea2ebafe024e329dabc780b40fc76",
+  "path": "pay.do",
+  "request": {
+    "orderNo": "TESTA20260816104355920",
+    "paymentMethod": 1
+  },
+  "response": {
+    "orderNo": "TESTA20260816104355920",
+    "pnrCode": "JJH2SV",
+    "paymentMethod": 1,
+    "airlines": [
+      "QG"
+    ],
+    "status": 0,
+    "msg": "success",
+    "requestId": null,
+    "clientRequestId": null
+  },
+  "latency_ms": 212,
+  "recorded_at": "2026-08-16T02:43:56.283275Z"
+}

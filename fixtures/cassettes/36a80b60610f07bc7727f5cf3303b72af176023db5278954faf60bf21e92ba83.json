@@ -1,0 +1,22 @@
+{
+  "key": "36a80b60610f07bc7727f5cf3303b72af176023db5278954faf60bf21e92ba83",
+  "path": "pay.do",
+  "request": {
+    "orderNo": "TESTA20260816121412479",
+    "paymentMethod": 1
+  },
+  "response": {
+    "orderNo": "TESTA20260816121412479",
+    "pnrCode": "QOBON8",
+    "paymentMethod": 1,
+    "airlines": [
+      "QG"
+    ],
+    "status": 0,
+    "msg": "success",
+    "requestId": null,
+    "clientRequestId": null
+  },
+  "latency_ms": 142,
+  "recorded_at": "2026-08-16T04:14:12.771323Z"
+}

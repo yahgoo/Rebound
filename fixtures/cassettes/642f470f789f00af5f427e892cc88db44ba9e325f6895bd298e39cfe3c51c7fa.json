@@ -1,0 +1,22 @@
+{
+  "key": "642f470f789f00af5f427e892cc88db44ba9e325f6895bd298e39cfe3c51c7fa",
+  "path": "pay.do",
+  "request": {
+    "orderNo": "TESTA20260816140531762",
+    "paymentMethod": 1
+  },
+  "response": {
+    "orderNo": "TESTA20260816140531762",
+    "pnrCode": "NBQR4V",
+    "paymentMethod": 1,
+    "airlines": [
+      "QG"
+    ],
+    "status": 0,
+    "msg": "success",
+    "requestId": null,
+    "clientRequestId": null
+  },
+  "latency_ms": 205,
+  "recorded_at": "2026-08-16T06:05:32.112865Z"
+}

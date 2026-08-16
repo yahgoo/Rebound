@@ -1,0 +1,22 @@
+{
+  "key": "d690ff39a81a3b5aa9b8807750c266222855c60230f4de84d068df9520e1ce0b",
+  "path": "pay.do",
+  "request": {
+    "orderNo": "TESTA20260816102235564",
+    "paymentMethod": 1
+  },
+  "response": {
+    "orderNo": "TESTA20260816102235564",
+    "pnrCode": "FYUADO",
+    "paymentMethod": 1,
+    "airlines": [
+      "QG"
+    ],
+    "status": 0,
+    "msg": "success",
+    "requestId": null,
+    "clientRequestId": null
+  },
+  "latency_ms": 128,
+  "recorded_at": "2026-08-16T02:22:35.857540Z"
+}

@@ -1,0 +1,22 @@
+{
+  "key": "63b61c1d8a7d24c0ebfcec1549f4079db375d17686b7e3b432080bdf5c732080",
+  "path": "pay.do",
+  "request": {
+    "orderNo": "TESTA20260816102809846",
+    "paymentMethod": 1
+  },
+  "response": {
+    "orderNo": "TESTA20260816102809846",
+    "pnrCode": "LGHOF0",
+    "paymentMethod": 1,
+    "airlines": [
+      "QG"
+    ],
+    "status": 0,
+    "msg": "success",
+    "requestId": null,
+    "clientRequestId": null
+  },
+  "latency_ms": 142,
+  "recorded_at": "2026-08-16T02:28:10.142115Z"
+}

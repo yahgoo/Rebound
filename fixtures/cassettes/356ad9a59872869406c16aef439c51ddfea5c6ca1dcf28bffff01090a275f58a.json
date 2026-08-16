@@ -1,0 +1,22 @@
+{
+  "key": "356ad9a59872869406c16aef439c51ddfea5c6ca1dcf28bffff01090a275f58a",
+  "path": "pay.do",
+  "request": {
+    "orderNo": "TESTA20260816125542313",
+    "paymentMethod": 1
+  },
+  "response": {
+    "orderNo": "TESTA20260816125542313",
+    "pnrCode": "IQAUXA",
+    "paymentMethod": 1,
+    "airlines": [
+      "QG"
+    ],
+    "status": 0,
+    "msg": "success",
+    "requestId": null,
+    "clientRequestId": null
+  },
+  "latency_ms": 124,
+  "recorded_at": "2026-08-16T04:55:42.582157Z"
+}

@@ -1,0 +1,22 @@
+{
+  "key": "17bdf8f9ddd264485b696c9034e68dac832bd819ed482bab8d3dc8795200385e",
+  "path": "pay.do",
+  "request": {
+    "orderNo": "TESTA20260816103144551",
+    "paymentMethod": 1
+  },
+  "response": {
+    "orderNo": "TESTA20260816103144551",
+    "pnrCode": "ROWFRI",
+    "paymentMethod": 1,
+    "airlines": [
+      "QG"
+    ],
+    "status": 0,
+    "msg": "success",
+    "requestId": null,
+    "clientRequestId": null
+  },
+  "latency_ms": 131,
+  "recorded_at": "2026-08-16T02:31:44.834241Z"
+}

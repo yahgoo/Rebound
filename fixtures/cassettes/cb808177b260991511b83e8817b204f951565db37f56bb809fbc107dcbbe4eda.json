@@ -1,0 +1,22 @@
+{
+  "key": "cb808177b260991511b83e8817b204f951565db37f56bb809fbc107dcbbe4eda",
+  "path": "pay.do",
+  "request": {
+    "orderNo": "TESTA20260815020605810",
+    "paymentMethod": 1
+  },
+  "response": {
+    "orderNo": "TESTA20260815020605810",
+    "pnrCode": "SEV6AL",
+    "paymentMethod": 1,
+    "airlines": [
+      "QG"
+    ],
+    "status": 0,
+    "msg": "success",
+    "requestId": null,
+    "clientRequestId": null
+  },
+  "latency_ms": 311,
+  "recorded_at": "2026-08-14T18:06:06.194436Z"
+}

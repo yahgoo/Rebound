@@ -1,0 +1,22 @@
+{
+  "key": "343cfc87956260a401dabe30b5c5dcbbd74679c5a9635b7cfab001e0870e3c9f",
+  "path": "pay.do",
+  "request": {
+    "orderNo": "TESTA20260815002134580",
+    "paymentMethod": 1
+  },
+  "response": {
+    "orderNo": "TESTA20260815002134580",
+    "pnrCode": "Y1RGIX",
+    "paymentMethod": 1,
+    "airlines": [
+      "QG"
+    ],
+    "status": 0,
+    "msg": "success",
+    "requestId": null,
+    "clientRequestId": null
+  },
+  "latency_ms": 266,
+  "recorded_at": "2026-08-14T16:21:34.852267Z"
+}

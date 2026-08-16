@@ -1,0 +1,22 @@
+{
+  "key": "fc5ca5ab59115638972da3a6d7d520a63118c20c6747555156a07eac55966d98",
+  "path": "pay.do",
+  "request": {
+    "orderNo": "TESTA20260816112313047",
+    "paymentMethod": 1
+  },
+  "response": {
+    "orderNo": "TESTA20260816112313047",
+    "pnrCode": "BVBUJH",
+    "paymentMethod": 1,
+    "airlines": [
+      "QG"
+    ],
+    "status": 0,
+    "msg": "success",
+    "requestId": null,
+    "clientRequestId": null
+  },
+  "latency_ms": 136,
+  "recorded_at": "2026-08-16T03:23:13.341046Z"
+}

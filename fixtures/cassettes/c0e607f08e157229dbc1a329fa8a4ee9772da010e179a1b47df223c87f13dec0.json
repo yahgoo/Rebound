@@ -1,0 +1,22 @@
+{
+  "key": "c0e607f08e157229dbc1a329fa8a4ee9772da010e179a1b47df223c87f13dec0",
+  "path": "pay.do",
+  "request": {
+    "orderNo": "TESTA20260816105951886",
+    "paymentMethod": 1
+  },
+  "response": {
+    "orderNo": "TESTA20260816105951886",
+    "pnrCode": "ENA9TF",
+    "paymentMethod": 1,
+    "airlines": [
+      "QG"
+    ],
+    "status": 0,
+    "msg": "success",
+    "requestId": null,
+    "clientRequestId": null
+  },
+  "latency_ms": 134,
+  "recorded_at": "2026-08-16T02:59:52.188541Z"
+}

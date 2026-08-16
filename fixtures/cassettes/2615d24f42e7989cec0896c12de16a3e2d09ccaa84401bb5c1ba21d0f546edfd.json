@@ -1,0 +1,22 @@
+{
+  "key": "2615d24f42e7989cec0896c12de16a3e2d09ccaa84401bb5c1ba21d0f546edfd",
+  "path": "pay.do",
+  "request": {
+    "orderNo": "TESTA20260816104149217",
+    "paymentMethod": 1
+  },
+  "response": {
+    "orderNo": "TESTA20260816104149217",
+    "pnrCode": "HF4H3K",
+    "paymentMethod": 1,
+    "airlines": [
+      "QG"
+    ],
+    "status": 0,
+    "msg": "success",
+    "requestId": null,
+    "clientRequestId": null
+  },
+  "latency_ms": 141,
+  "recorded_at": "2026-08-16T02:41:49.557680Z"
+}
