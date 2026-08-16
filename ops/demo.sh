@@ -1,6 +1,26 @@
 #!/usr/bin/env bash
 # Reset, reseed, warm, rehearse the happy path, then live-vs-replay parity (I9).
 # warm_atlas doubles as the A3 pre-flight gate (read-only Atlas probes).
+#
+# REBOUND_MODE=replay — sanctioned FALLBACK demo path (A6, documentation only):
+#   When the Atlas sandbox identity is exhausted or a live run is unsafe, run the
+#   ENTIRE happy path from saved cassettes instead of calling Atlas:
+#       REBOUND_MODE=replay bash ops/demo.sh
+#   Rules (see docs/JUDGE_WALKTHROUGH.md Part 7 + docs/DUPLICATE_BOOKING_TASKS.md §14):
+#     * Announce replay to the presenter BEFORE starting — never mid-case. The
+#       mid-case automatic live->replay fallback was considered and rejected: it
+#       would need a hybrid transport inside packages/atlas/ with session IDs that
+#       may not match cassette keys, executed at the moment of peak stress.
+#     * The main flow below hardcodes REBOUND_MODE=live (start_live stage); the
+#       env var is honored by start_server, so preset it on the CLI as shown.
+#     * Replay demonstrates ONLY the default (non-unique) identity. It does NOT
+#       validate the DEMO_UNIQUE_PAX path (parity is skipped under it by design).
+#     * Known-good cassette backup: /tmp/cassettes-known-good (218 files, TAN
+#       default identity / Tan Mei Lin / order.do key 3347c510...). See §14.
+#   Known limitation (16 Aug 2026): replay currently fails at order.do with
+#   cassette_miss — I4 identity-field redaction changes the order.do cassette key
+#   between live and replay, so PARITY OK is structurally impossible until the
+#   cassette key includes a stable passenger identifier. Live phase is unaffected.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

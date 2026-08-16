@@ -677,3 +677,81 @@ Honest note: A4's change is **uncommitted** (the mandate committed only A1/A2/A3
 
 TASK A4 VERIFIED
 
+---
+
+## 14. A6 — pre-announced full-replay demo path (zero code; 16 Aug, Part 1)
+
+**Scope:** documentation + verification only. Modified: `docs/JUDGE_WALKTHROUGH.md` (Part 7) and `ops/demo.sh` (header comment). **Not touched:** `packages/atlas/` or any other source file. A2c still not approved — no code written.
+
+### Delivered documentation
+
+1. `REBOUND_MODE=replay` documented as the sanctioned fallback demo (presenter narration in JUDGE_WALKTHROUGH Part 7: announce replay BEFORE starting, never during).
+2. Why the mid-case automatic live→replay fallback was NOT built: (a) hybrid transport inside `packages/atlas/`; (b) session IDs may not match cassette keys; (c) executed at the moment of peak stress.
+3. Known-good backup: `/tmp/cassettes-known-good` — **218 files** — captured from `fixtures/cassettes` BEFORE the 16 Aug runs. It covers the **TAN default identity** (Tan/Mei Lin, seeded order `TESTA20260815020605810`, CGK→SUB; `order.do` key `3347c510…` → `status=0`). Explicit: the known-good replay demonstrates **only the default (non-unique) identity** — it does NOT validate `DEMO_UNIQUE_PAX`.
+
+### Verification evidence (exact mandate commands)
+
+```bash
+cp -r fixtures/cassettes /tmp/cassettes-known-good && ls /tmp/cassettes-known-good | wc -l   # 218  (OK)
+REBOUND_MODE=replay bash ops/demo.sh 2>&1 | tee /tmp/a6-replay.log | rg -n "stage|recovered|human_taps"
+uv run python -m packages.agents.caretaker receipt <case_ref>
+```
+
+- **Literal TAN run** (`/tmp/a6-replay.log`): live phase FAILED — 3 verified candidates, **all 318** at order.do (duplicates = the seed itself `TESTA20260815020605810`, plus prior bookings `TESTA20260815031610981`, `TESTA20260816104825953`) → Tan identity exhausted → **replay never ran** (script aborts at `wait_case_field`). Preflight had printed `past_318=False held_flights=2` — preflight probes the held flight, but live reseed/verify re-uses the same passenger+flight, so exhaustion only shows at order time.
+- **BIZ fallback run** (`DEMO_TAN_ORDER=TESTA20260815002321968`, `/tmp/a6-replay-biz.log`): live phase RECOVERED ($42.73 USD, human_taps=1, happy path 117s) — then `parity_check` restarted in replay: **replay phase FAILED with `cassette_miss` ×2** at order.do (`timeout waiting for RC-0001 status=recovered`; case failed; receipt amount 0; attempts both `cassette_miss`).
+
+### Root cause — structural: I4 redaction vs identity-keyed order.do
+
+`CassetteRecorder._SENSITIVE_KEYS` redacts `cardnum`, `birthday`, `dob`, `passport_number`, `date_of_birth` → `[REDACTED]` in **stored responses** (I4). Replay reseeds from the replayed `queryOrderDetails.do` → the reseeded passenger carries `birthday:[REDACTED]`/`cardNum:[REDACTED]` → the `order.do` cassette key (sha256 of path + payload including birthday + passport) differs:
+
+| Phase | order.do key | Notes |
+|---|---|---|
+| Live (recorded) | `46f421a9…` | real passenger identity |
+| Replay (derived) | `6988b6fc…` | redacted identity → `CassetteMissError` |
+
+`verify.do` replays fine (payload is `routingIdentifier`-only, not identity-keyed). So **PARITY OK is structurally impossible in default mode** with the current cassette design — this also explains A2b's PARITY FAIL and the earlier 04:15 cassette_miss. Fix would be a stable passenger identity in the order.do key (or a non-redacted reseed source), which is a code change out of scope for A6.
+
+### I2 verify-top-3 vs A4 max_attempts=5
+
+`ExecutorAgent.score_and_verify` verifies only the **top 3 by score** (`top = [c for c in ranked if c.score is not None][:3]`), and `_execute_confirmed` orders only verified candidates → attempts are structurally ≤3 even though A4 sets `DEMO_MAX_ATTEMPTS=5`. Observed: TAN run used all 3 attempts (all 318); BIZ run 1 used 1; run 2 used 2; run 3 used 2. 5-attempt depth never engaged.
+
+**TASK A6 NOT VERIFIED** — documentation delivered; the expected replay evidence (replay reaching `recovered`, `human_taps=1`, complete receipt, timings beating live) cannot be produced due to the structural cassette-key defect above. This is a defect found, not a documentation gap.
+
+---
+
+## 15. Part 2 — Task 26 re-verify with A1–A4 in place (16 Aug)
+
+Identity used: **BIZ order** (`TESTA20260815002321968`) via `DEMO_TAN_ORDER`, **default non-unique mode** (`DEMO_UNIQUE_PAX=0` — chosen because parity must run in default mode and preflight showed BIZ headroom; under default mode the BIZ passenger is the sandbox real passenger, not Ho). TAN identity effectively exhausted (see §14).
+
+### Three consecutive runs
+
+| Run | Stages (trigger/run/confirm/receipt) | Happy path | <90s? | human_taps | amount_paid | Deltas (cost SGD / hours) | Attempts used | Outcome |
+|---|---|---|---|---|---|---|---|---|
+| 1 (04:55Z) | 0s / 23s / 93s / 1s | ≈117s (case elapsed 108s) | ❌ | 1 | 42.73 USD | +38.27 / −24.0h | 1 (clean pay) | RECOVERED |
+| 2 (05:03Z) | 0s / 24s / 48s / 2s | ≈74s (case elapsed 64s) | ✅ | 1 | 57.19 USD | +18.75 / −17.25h | 2 (318 → paid) | RECOVERED |
+| 3 (05:06Z) | 0s / 30s / confirm → failed | — | ❌ | — | — | — | 2 (318 on seed; then order.do OK → pay-path `AssertionError`) | FAILED (receipt null) |
+
+- **Attempts actually used: 1 / 2 / 2** — never more than 2 despite `DEMO_MAX_ATTEMPTS=5` (I2 verify-top-3 bound, §14).
+- **Run 3 defect (new):** `executor.background_failed` event with `error_type: AssertionError` fired **1.25 ms** after the `ordered` event (05:07:22.095372 → .096625Z) — synchronous inside the `pay()` path, before the HTTP round trip. Eliminated candidates: I4 repr/str asserts (pass with default card), `_strip_card_secrets`/`_assert_no_card_secrets(persisted)` (whole `creditcard` key stripped). Exact line **UNCONFIRMED** — no Traceback in `/tmp/rebound-demo-uvicorn.log`. Post-`_post_pay_isolated` response assert remains a suspect. Orphaned order `TESTA20…07` from run 3 is un-ticketed (pay never completed).
+
+### Parity (live-vs-replay, default mode, against a case_ref with cassette coverage)
+
+Literal output (both runs 1 and 2, replay phase):
+
+```
+PARITY restarting in replay mode
+...
+timeout waiting for RC-0001 status=recovered
+...attempts: [ {error_code: cassette_miss}, {error_code: cassette_miss} ]
+```
+
+**PARITY OK NOT achieved.** Structural defect (I4 redaction vs identity-keyed order.do, §14) — replay cannot complete order.do in default mode. Not a configuration miss; verified both runs.
+
+### Classification
+
+- **Happy path <90s ×3: not verified, defect found** — 1/3 runs under 90s; run 3 hit a new pay-path AssertionError. (Not identity exhaustion for runs 1–2; run 3's first attempt was a genuine 318 on the BIZ seed itself — BIZ degraded across the three runs.)
+- **PARITY OK: not verified, defect found** — structural cassette-key mismatch (§14).
+- A1–A4 do not fix either requirement; they only hardened failover typing/depth (and depth is bounded by I2 anyway).
+
+TASK 26 REMAINS NOT VERIFIED (re-verified 16 Aug with A1–A4 landed).
+
