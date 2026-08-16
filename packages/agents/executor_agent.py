@@ -18,6 +18,7 @@ from sqlmodel import Session, select
 
 from packages.atlas.client import AtlasClient
 from packages.atlas.errors import (
+    AtlasDuplicateBookingError,
     AtlasError,
     AtlasPaymentDeclinedError,
     AtlasPriceMovedError,
@@ -477,6 +478,41 @@ class ExecutorAgent:
                 contact_email=_ORDER_CONTACT_EMAIL,
                 contact_phone=_ORDER_CONTACT_PHONE,
             )
+        except AtlasDuplicateBookingError as exc:
+            # 318 — Atlas correctly refuses a duplicate passenger+flight.
+            # Record the typed error and advance to the next candidate.
+            finished = datetime.now(UTC)
+            attempt = ExecutionAttempt(
+                candidate_id=cid,
+                offer_id=cand.offer_id,
+                verified=True,
+                order_no=None,
+                paid=False,
+                error_code=str(exc.code),
+                started_at=started,
+                finished_at=finished,
+            )
+            cand.rejected_reason = "duplicate_booking"
+            await self._write_event(
+                case_id=case_id,
+                step=_STEP_PAY_FAILED,
+                summary=(
+                    f"attempt={attempt_index} duplicate_booking"
+                    f" duplicates={exc.duplicate_orders}"
+                ),
+                payload={
+                    "attempt": attempt_index,
+                    "candidate_id": cid,
+                    "offer_id_prefix": offer_prefix,
+                    "error_code": str(exc.code)[:64],
+                    "error_type": type(exc).__name__,
+                    "stage": "order",
+                    "duplicate_orders": exc.duplicate_orders,
+                    "rejected_reason": "duplicate_booking",
+                },
+            )
+            await self._finish_attempt_event(case_id, attempt, attempt_index)
+            return attempt
         except AtlasError as exc:
             finished = datetime.now(UTC)
             attempt = ExecutionAttempt(

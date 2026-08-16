@@ -60,6 +60,23 @@ class AtlasThreeDSRequiredError(AtlasError):
     """code "616" [E]."""
 
 
+class AtlasDuplicateBookingError(AtlasError):
+    """code "318" [E]. Atlas refuses a duplicate passenger + flight pairing."""
+
+    duplicate_orders: list[str]
+
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        *,
+        duplicate_orders: list[str],
+        http_status: int | None = None,
+    ) -> None:
+        self.duplicate_orders = duplicate_orders
+        super().__init__(code, message, http_status)
+
+
 class AtlasTimeoutError(AtlasError):
     """Transport timed out waiting for Atlas."""
 

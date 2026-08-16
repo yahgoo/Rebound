@@ -10,6 +10,7 @@ import httpx
 
 from packages.atlas.errors import (
     AtlasAuthError,
+    AtlasDuplicateBookingError,
     AtlasError,
     AtlasPaymentDeclinedError,
     AtlasThreeDSRequiredError,
@@ -53,6 +54,12 @@ def _extract_code_and_message(body: dict) -> tuple[str, str]:
 
 
 def _looks_like_auth_failure(*, code: str, message: str, http_status: int | None) -> bool:
+    # Known non-auth Atlas status codes that may arrive on HTTP 403
+    # (e.g. deposit-only fare 403, or 318 duplicate booking). Do not
+    # mis-classify these as auth failures.
+    _NON_AUTH_CODES = {"318"}
+    if code in _NON_AUTH_CODES:
+        return False
     if http_status in {401, 403}:
         return True
     lowered = message.lower()
@@ -81,6 +88,16 @@ def raise_for_atlas_response(body: dict, *, http_status: int | None = None) -> N
     if code in {"0", "00"}:
         return
 
+    if code == "318":
+        dup_orders = body.get("duplicateOrders") or []
+        if not isinstance(dup_orders, list):
+            dup_orders = [str(dup_orders)]
+        raise AtlasDuplicateBookingError(
+            code=code,
+            message=message or "Duplicate booking",
+            duplicate_orders=[str(o) for o in dup_orders],
+            http_status=http_status,
+        )
     if code == "604":
         raise AtlasPaymentDeclinedError(code=code, message=message or "Payment declined", http_status=http_status)
     if code == "616":
