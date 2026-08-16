@@ -77,6 +77,30 @@ class AtlasDuplicateBookingError(AtlasError):
         super().__init__(code, message, http_status)
 
 
+class AtlasPIILeakError(AtlasError):
+    """I4 guard tripped: card data would leak into a persisted surface.
+
+    Carries only the guard context and the offending key name — never the
+    leaked value itself, even inside the error object or any log line.
+    """
+
+    context: str
+    key: str | None
+
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        *,
+        context: str,
+        key: str | None = None,
+        http_status: int | None = None,
+    ) -> None:
+        self.context = context
+        self.key = key
+        super().__init__(code, message, http_status)
+
+
 class AtlasTimeoutError(AtlasError):
     """Transport timed out waiting for Atlas."""
 

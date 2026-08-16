@@ -15,6 +15,7 @@ from packages.atlas.errors import (
     AtlasError,
     AtlasNoResultsError,
     AtlasPaymentDeclinedError,
+    AtlasPIILeakError,
     AtlasPriceMovedError,
     AtlasThreeDSRequiredError,
     AtlasTimeoutError,
@@ -336,24 +337,40 @@ def _strip_card_secrets(obj: Any) -> Any:
     return obj
 
 
-def _assert_no_card_secrets(obj: Any, *, context: str) -> None:
-    """Raise if PAN-shaped digits or card keys remain (I4 — assert in code)."""
+def _assert_no_card_secrets(
+    obj: Any, *, context: str, key: str | None = None
+) -> None:
+    """Raise AtlasPIILeakError if PAN-shaped digits or card keys remain (I4).
+
+    Detection is unchanged — only what is raised is typed. Carries the guard
+    context and the offending key name, never the leaked value itself.
+    """
     if isinstance(obj, dict):
         for k, v in obj.items():
             if _is_card_secret_key(str(k)):
-                raise AssertionError(f"I4: card field {k!r} leaked into {context}")
-            _assert_no_card_secrets(v, context=context)
+                raise AtlasPIILeakError(
+                    code="i4_pii_leak",
+                    message=f"I4: card field {k!r} leaked into {context}",
+                    context=context,
+                    key=str(k),
+                )
+            _assert_no_card_secrets(v, context=context, key=str(k))
         return
     if isinstance(obj, list):
         for v in obj:
-            _assert_no_card_secrets(v, context=context)
+            _assert_no_card_secrets(v, context=context, key=key)
         return
     if isinstance(obj, str):
         for match in _PAN_SHAPE.finditer(obj):
             digits = match.group(1)
             # Luhn-valid runs are PANs; refuse them in any persisted/exception text.
             if _luhn_ok(digits):
-                raise AssertionError(f"I4: PAN-shaped value leaked into {context}")
+                raise AtlasPIILeakError(
+                    code="i4_pii_leak",
+                    message=f"I4: PAN-shaped value leaked into {context}",
+                    context=context,
+                    key=key,
+                )
 
 
 def _luhn_ok(digits: str) -> bool:

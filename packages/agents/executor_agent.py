@@ -21,6 +21,7 @@ from packages.atlas.errors import (
     AtlasDuplicateBookingError,
     AtlasError,
     AtlasPaymentDeclinedError,
+    AtlasPIILeakError,
     AtlasPriceMovedError,
     AtlasThreeDSRequiredError,
     AtlasTimeoutError,
@@ -564,6 +565,45 @@ class ExecutorAgent:
             # Card is passed only to AtlasClient.pay (Zone A). It must never
             # appear in this event payload, a log line, or a cassette (I4).
             paid = await self._atlas.pay(order_no=order_no, card=card)
+        except AtlasPIILeakError as exc:
+            # I4 guard tripped on the pay response: typed, not a bare assert,
+            # so the attempt is visible in the event log and yields a receipt.
+            finished = datetime.now(UTC)
+            attempt = ExecutionAttempt(
+                candidate_id=cid,
+                offer_id=cand.offer_id,
+                verified=True,
+                order_no=order_no,
+                paid=False,
+                error_code="i4_pay_response_guard",
+                started_at=started,
+                finished_at=finished,
+            )
+            await self._write_event(
+                case_id=case_id,
+                step=_STEP_PAY_FAILED,
+                summary=(
+                    f"attempt={attempt_index} pay_failed code={exc.code} "
+                    f"order_no={audit_no} context={exc.context}"
+                ),
+                payload={
+                    "attempt": attempt_index,
+                    "candidate_id": cid,
+                    "offer_id_prefix": offer_prefix,
+                    "order_no": audit_no,
+                    "error_code": "i4_pay_response_guard",
+                    "error_type": type(exc).__name__,
+                    "paid": False,
+                    "stage": "pay",
+                    # Orphan: order.do already succeeded. No cancel in this task.
+                    "orphaned_order": True,
+                    # Only context + key name — never the leaked value (I4).
+                    "i4_context": exc.context,
+                    "i4_key": exc.key,
+                },
+            )
+            await self._finish_attempt_event(case_id, attempt, attempt_index)
+            return attempt
         except _FAILOVER_ERROR_TYPES as exc:
             finished = datetime.now(UTC)
             attempt = ExecutionAttempt(
