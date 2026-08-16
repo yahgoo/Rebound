@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 from datetime import UTC, datetime, timedelta
@@ -508,10 +509,25 @@ async def _execute_confirmed(
             ),
         )
         agent = ExecutorAgent(atlas, None, gate, _factory())
-        await agent.execute(
+        passengers = _passengers(order.passengers_json, case_ref=case.case_ref)
+        if os.environ.get("DEMO_UNIQUE_PAX") == "1":
+            await _append_event(
+                case,
+                actor=Actor.EXECUTOR,
+                step="executor.demo_unique_pax",
+                summary="DEMO_UNIQUE_PAX=1 active — synthetic passport per case_ref",
+                payload={
+                    "case_ref": case.case_ref,
+                    "unique_passport_sha": hashlib.sha256(
+                        (passengers[0].passport_number or "").encode()
+                    ).hexdigest()[:12] if passengers else None,
+                    "demo_unique_pax": True,
+                },
+            )
+        outcome = await agent.execute(
             case_id=case.id,
             ordered_candidates=ordered,
-            passengers=_passengers(order.passengers_json),
+            passengers=passengers,
             card=_sandbox_card(),
             max_attempts=3,
         )
@@ -899,7 +915,35 @@ def _json_object(raw: str) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
-def _passengers(raw: str) -> list[Passenger]:
+def _unique_passport(case_ref: str, original: str | None) -> str:
+    """Derive a per-case-unique passport number seeded deterministically.
+
+    DEMO_UNIQUE_PAX=1 only.  The format is ``RR`` + 16 hex chars so the
+    value is **not** matched by Guardian's ICAO-ish passport regex
+    (``[A-Za-z]{1,2}\\d{6,9}``) — letters are interleaved with digits in
+    the hex portion, preventing a false-positive PII hit when the value
+    appears in agent-event payloads.
+    """
+    digest = hashlib.sha256(f"rebound-demo-unique-pax:{case_ref}".encode()).hexdigest()
+    return f"RR{digest[:16]}"
+
+
+def _unique_surname(case_ref: str) -> str:
+    """Derive a per-case-unique surname seeded deterministically.
+
+    Probe results showed Atlas's duplicate key includes the passenger
+    **name**, not just the passport.  Changing passport alone still
+    returns 318; changing the surname eliminates the duplicate.
+    """
+    syllables = [
+        "Tan", "Lee", "Ong", "Lim", "Ng", "Wong", "Chua", "Goh",
+        "Teo", "Yap", "Sim", "Loh", "Tay", "Ho", "Au", "Soh",
+    ]
+    digest = hashlib.sha256(f"rebound-demo-unique-surname:{case_ref}".encode()).digest()
+    return syllables[digest[0] % len(syllables)]
+
+
+def _passengers(raw: str, *, case_ref: str | None = None) -> list[Passenger]:
     try:
         values = json.loads(raw or "[]")
     except json.JSONDecodeError:
@@ -921,12 +965,16 @@ def _passengers(raw: str) -> list[Passenger]:
                 born = datetime.fromisoformat(str(birthday).replace("Z", "+00:00"))
             except ValueError:
                 born = datetime(1990, 1, 15, tzinfo=UTC)
+            passport_raw = value.get("cardNum") or value.get("passport_number")
+            if case_ref and os.environ.get("DEMO_UNIQUE_PAX") == "1":
+                passport_raw = _unique_passport(case_ref, passport_raw)
+                surname = _unique_surname(case_ref)
             passengers.append(
                 Passenger(
                     given_name=given.title(),
                     surname=surname.title(),
                     date_of_birth=born,
-                    passport_number=value.get("cardNum") or value.get("passport_number"),
+                    passport_number=passport_raw,
                     nationality=value.get("nationality") or "SG",
                 )
             )
