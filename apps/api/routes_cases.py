@@ -529,7 +529,7 @@ async def _execute_confirmed(
             ordered_candidates=ordered,
             passengers=passengers,
             card=_sandbox_card(),
-            max_attempts=3,
+            max_attempts=int(os.environ.get("DEMO_MAX_ATTEMPTS", "5")),
         )
         await publisher.publish(case.case_ref)
     except Exception as exc:
