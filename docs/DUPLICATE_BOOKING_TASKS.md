@@ -845,6 +845,46 @@ Commit (local, unpushed): `b4ff428` `A8: salted-hash cassette keys for order.do 
 
 ---
 
+## 19. A2c — seeded-order rotation (16 Aug, implemented + VERIFIED)
+
+**Goal:** a single exhausted identity must never block testing again; fresh identities are minted on demand on distinct route/date/passenger combinations. Proposed in §12, never built until now.
+
+### Mechanism (3 pieces)
+
+1. **`ops/mint_order.sh <ORIGIN> <DESTINATION> <YYYY-MM-DD> [LABEL]`** — mints a fresh ticketed sandbox order via the real booking chain (search.do → verify.do → order.do → pay.do) with a random synthetic passenger (syllable-table surname + `RR{hex16}` passport, avoiding Guardian's ICAO regex) and the documented sandbox Visa (4532015112830366). Recorder is disabled (`recorder=None`) so minting never pollutes the cassette store (I9) and never confuses the A3 preflight's past-318 detection. Refuses non-sandbox base URLs before the money path. Appends the new `order_no` to the pool with `status=fresh`. (The sandbox mints `TESTA…` order numbers itself — `orderNo` on the order.do response — so **no external portal step exists; minting is fully scripted**.)
+2. **`fixtures/seeded_orders.json`** — the rotation pool: order_no / label / route / date / passenger / status (`fresh` | `used` | `exhausted`). Bootstrap: TAN=exhausted, BIZ=used, FAMILY=exhausted.
+3. **`ops/demo.sh` selection** — `DEMO_ORDER` env wins; else `DEMO_ORDER_INDEX` into the pool; else the first `status=="fresh"` pool entry; else the classic TAN default. The A3 preflight probes the **selected** order (was hardcoded to TAN) and `run_happy_path` triggers the selected order (was hardcoded to TAN). Backwards compatible: no env → TAN default (previous behaviour unchanged).
+
+Constraint check: only `ops/demo.sh` modified plus two new files (`ops/mint_order.sh`, `fixtures/seeded_orders.json`). `packages/atlas/` and `packages/agents/strategist.py` untouched, as mandated.
+
+### Mint procedure (going forward — no more §12-style investigations)
+
+```
+bash ops/mint_order.sh SUB CGK 2026-09-20 mylabel      # prints MINT OK order_no=TESTA…
+DEMO_ORDER=TESTA… PREFLIGHT_ONLY=1 bash ops/demo.sh     # gate: expect PREFLIGHT OK
+DEMO_ORDER=TESTA… bash ops/demo.sh                      # full E2E incl. internal parity_check
+# after 1–2 clean runs, mark the pool entry exhausted (edit fixtures/seeded_orders.json)
+```
+
+### Identity inventory (16 Aug, after this session)
+
+| order_no | label | route / date | passenger | status | notes |
+|---|---|---|---|---|---|
+| TESTA20260815020605810 | tan | CGK-SUB 09-13 | Test/Passenger | exhausted | §12/§14 |
+| TESTA20260815002321968 | biz | HLP-SUB 09-13 | Test/Passenger | used | §14 fallback run |
+| TESTA20260815002134580 | family | CGK-SUB 09-13 | Test/Passenger | exhausted | A8 run-2 + A9 run-4 |
+| TESTA20260816190635232 | part2 | SUB-CGK 09-20 | Lim/Test | used (fresh → used) | A9 run-5 (1 clean run); gate blocks run-2 (`duplicate_risk:2`) |
+
+### Verification
+
+- Mint: `bash ops/mint_order.sh SUB CGK 2026-09-20 part2` → `MINT OK order_no=TESTA20260816190635232 route=SUB-CGK date=2026-09-20 passenger=Lim/Test amount=42.23 USD paid=True status=0`; the order settles to `ticketed` within ~45s (queried live).
+- Selection: `DEMO_ORDER=…` override and pool-index selection verified via the `ORDER_SELECTION` line; no env → TAN default preserved.
+- Gate on the fresh identity: `PREFLIGHT OK` (held_flights=1, past_318=False). After run-5 the same gate DEGRADED (`duplicate_risk:2`, held_flights=2) — the reused A3 preflight correctly refuses to spend a degraded identity, proving the headroom-check workflow end to end.
+
+**TASK A2c VERIFIED** — rotation mechanism built, minted a fresh identity live, and drove a clean PARITY-OK E2E (A9 run-5) without touching `packages/atlas/` or `strategist.py`.
+
+---
+
 ## 18. A9 — eliminate scorer nondeterminism between live and replay (16 Aug, time-boxed)
 
 **Goal:** identical live/replay run steps and outcome (PARITY OK) on the FAMILY chain.
@@ -882,4 +922,15 @@ Both tokens come from CGK→SUB 13 Sep searches one second apart (07:23:41Z vs 0
 Fix implemented and unit-verified; dedup behavior confirmed live. E2E PARITY OK was **not** re-demonstrated: the one permitted run was consumed by the identity-level 318 failure before `parity_check` could execute. Identity headroom after run 4: **0** — a live re-verification requires an Atlas sandbox reset, then `bash ops/demo.sh` (FAMILY chain).
 
 **TASK A9 NOT VERIFIED** — root cause identified as the concurrent duplicate search.do recording race (live verified rids never match the recorded search cassette), fix implemented (`fan_out` payload dedup + plan cache) and unit-verified, but E2E parity not confirmed across repeats — 0 identity runs remain after run-4's 318 failures.
+
+### Closing (16 Aug, fresh-identity run — A2c part 2)
+
+A2c (§19) delivered a fresh identity: **`TESTA20260816190635232`** (SUB→CGK 2026-09-20, passenger Lim/Test, 42.23 USD, ticketed). Full E2E with it (`DEMO_ORDER=… bash ops/demo.sh`, run 5, 11:07Z):
+
+- `PREFLIGHT OK` (held_flights=1, past_318=False, order.do cassette absent).
+- Live: RC-0001 → run → `awaiting_confirmation` [5,6,2] → confirm 5 → **recovered** → receipt `amount_paid=70.34`, **1 attempt, error_code=null** (clean single pay, zero 318).
+- The plan cache shows the exact run-3 race shape — **3 strategies sharing the identical SUB→CGK 09-20 payload** — now handled by dedup: replay candidates carry **exactly 2 rid tokens** (`17868784957082b9cae53` ×6 for 09-20, `17868784957261d3d36c9` ×7 for 09-21), one per unique payload, not one per strategy.
+- Replay: same candidate_ids [5,6,2], same recommended 5, same receipt (70.34, 1 attempt, error null), scoring code from cache (`source=a9_cache`, 2608 bytes) → **`PARITY OK`** (demo.sh:258), DEMO EXIT=0, 72 events both phases.
+
+A second consecutive run was correctly blocked by the reused A3 gate: `PREFLIGHT DEGRADED reason=duplicate_risk:2` (held_flights=2 — original + recovery flight both booked by Lim; 2 of the top-3 cheapest candidates would 318). Per the A2c mandate's discipline, one clean run alone does not establish reliability: **PARITY OK on 1/1 available run this session; root cause and fix are solid, full reliability not yet confirmed across repeats.** A future session mints a fresh identity (`bash ops/mint_order.sh …`) and takes the second confirmation.
 

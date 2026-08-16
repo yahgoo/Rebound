@@ -61,6 +61,50 @@ else
   UVICORN=(python3 -m uvicorn)
 fi
 
+# A2c: rotate the triggered seeded order. DEMO_ORDER wins; else
+# DEMO_ORDER_INDEX into the rotation pool (fixtures/seeded_orders.json);
+# else the first "fresh" pool entry; else the classic TAN default. A single
+# exhausted identity can never block runs again — the A3 preflight still
+# reports health for whatever order is selected.
+SELECTED_ORDER="${DEMO_ORDER:-}"
+if [[ -z "$SELECTED_ORDER" && -n "${DEMO_ORDER_INDEX:-}" ]]; then
+  SELECTED_ORDER="$("${PY[@]}" - "$DEMO_ORDER_INDEX" <<'PY'
+import json, sys
+from pathlib import Path
+idx = int(sys.argv[1])
+registry = Path("fixtures/seeded_orders.json")
+orders = []
+if registry.is_file():
+    try:
+        orders = (json.loads(registry.read_text()) or {}).get("orders") or []
+    except Exception:
+        orders = []
+if 0 <= idx < len(orders):
+    print(orders[idx].get("order_no", ""))
+PY
+)"
+fi
+if [[ -z "$SELECTED_ORDER" ]]; then
+  SELECTED_ORDER="$("${PY[@]}" <<'PY'
+import json
+from pathlib import Path
+registry = Path("fixtures/seeded_orders.json")
+if registry.is_file():
+    try:
+        orders = (json.loads(registry.read_text()) or {}).get("orders") or []
+    except Exception:
+        orders = []
+    for order in orders:
+        if order.get("status") == "fresh":
+            print(order.get("order_no", ""))
+            break
+PY
+)"
+fi
+SELECTED_ORDER="${SELECTED_ORDER:-$TAN_ORDER}"
+export SELECTED_ORDER PROBE_ORDER="$SELECTED_ORDER"
+echo "ORDER_SELECTION ${SELECTED_ORDER}"
+
 STAGE_NAME=""
 STAGE_START=0
 declare -a STAGE_LINES=()
@@ -269,7 +313,8 @@ def flight_key(segment) -> tuple[str, str, str]:
 
 async def main() -> int:
     try:
-        details = await atlas.query_order_details(order_no=os.environ["TAN_ORDER"])
+        order_no = os.environ.get("PROBE_ORDER") or os.environ["TAN_ORDER"]
+        details = await atlas.query_order_details(order_no=order_no)
         print(
             f"WARM atlas order={details.order_no} status={details.status} "
             f"segments={len(details.segments)}"
@@ -446,7 +491,7 @@ run_happy_path() {
   local case_ref=""
   stage_begin trigger
   local trigger_body
-  trigger_body="$(printf '{"atlas_order_no":"%s"}' "$TAN_ORDER")"
+  trigger_body="$(printf '{"atlas_order_no":"%s"}' "$SELECTED_ORDER")"
   local trigger_resp
   trigger_resp="$(json_post "$BASE/cases/trigger" "$trigger_body")"
   echo "$trigger_resp"
