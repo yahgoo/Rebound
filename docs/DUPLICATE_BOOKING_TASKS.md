@@ -755,3 +755,91 @@ timeout waiting for RC-0001 status=recovered
 
 TASK 26 REMAINS NOT VERIFIED (re-verified 16 Aug with A1–A4 landed).
 
+---
+
+## 16. A7 — pay-path PII-leak guard: bare AssertionError → typed AtlasPIILeakError (16 Aug)
+
+**Problem 1 fix (mandate `qoder_prompt_a7_a8.txt`).** Task 26 run 3 (16 Aug 05:07Z) ended with `status=failed, receipt=null`: `executor.background_failed` with `error_type: AssertionError` fired 1.25 ms after `ordered`, inside the `pay()` path. Root cause (diagnosed prior session): `_assert_no_card_secrets` raised a **bare `AssertionError`**, which is swallowed by the generic background-task handler → no typed `ExecutionAttempt`, no receipt.
+
+### Change (3 files, exactly the allowlist)
+
+- `packages/atlas/errors.py` — new `AtlasPIILeakError(AtlasError)` with `code="i4_pii_leak"`, `context: str`, `key: str | None`. Carries only the guard context and offending key name — never the leaked value, even inside the error object or log lines (I4).
+- `packages/atlas/client.py` — `_assert_no_card_secrets` now raises `AtlasPIILeakError` instead of `AssertionError`, preserving the exact detection logic (`_PAN_SHAPE` Luhn check + card-key-name check). `key` is threaded down recursion (dict-key case → the card key name; PAN-shaped case → the key under which the value sits). Callers unchanged (keyword `context` only).
+- `packages/agents/executor_agent.py` — `_attempt_one` catches `AtlasPIILeakError` (before `_FAILOVER_ERROR_TYPES`): writes a typed `ExecutionAttempt` (`error_code="i4_pay_response_guard"`, `orphaned_order=True`, `stage="pay"`), emits `executor.pay_failed` with `i4_context`/`i4_key` only, and returns the attempt — the case advances/fails cleanly with a receipt. Never again `status=failed, receipt=null` with no typed attempt (I8).
+
+Note: `packages/atlas/client.py` carries uncommitted Task 25/26 chaos WIP (disjoint regions). The A7 hunk was committed via index surgery (`git hash-object`/`update-index` against a HEAD snapshot); WIP stayed working-tree-only.
+
+### Verification (verbatim)
+
+```
+$ uv run python -c "..."   # mandate unit test
+OK context= pay cassette response
+
+$ uv run python -c "..."   # I4: value never in error serialization
+I4 no-value-in-error: OK {"code": "i4_pii_leak", "context": "pay cassette response", "key": "ref", "message": "m", "http_status": null}
+
+$ uv run python -m packages.atlas.smoke_transport
+live POST search.do …
+live status= 0 bytes= 85986
+cassette written: fixtures/cassettes/ad482400…json
+replay POST search.do (no network) …
+OK: live + replay byte-identical; PAN redacted from cassette
+RC=0
+```
+
+- `smoke_order_pay`: **live run blocked environmentally** — hardcoded smoke identity (Test/Passenger + A12345678, JKT→SUB 2026-09-15) is exhausted (`AtlasDuplicateBookingError [318]`, pre-existing, §12/§14/§15; not caused by A7). Demonstrated PASS via replay against the HEAD success order.do cassette (temporarily restored, `REBOUND_MODE=replay` → `OK search→verify→order→pay issued pnr=H2EVKU`), then byte-identically restored the WIP cassette (cmp verified).
+- `git diff --stat` of commit `2978c20`: exactly the 3 allowlisted files, +87/−6.
+- I8 typed-attempt path: code-verified (compile + structural parity with the proven 604/616 handlers). The guard itself cannot fire in the fixed happy path (no leak occurs), so no natural E2E trigger exists — that is the point of the fix.
+
+Commit (local, unpushed): `2978c20` `A7: convert pay-path PII-leak guard from bare AssertionError to typed AtlasPIILeakError with graceful failover`
+
+**TASK A7 VERIFIED** (smoke_order_pay caveat: environmental 318, replay-chain PASS demonstrated instead).
+
+---
+
+## 17. A8 — salted stable-hash cassette keys for order.do (16 Aug, time-boxed)
+
+**Problem 2 fix (I4/I9 structural conflict, §14/§15).** `order.do` keys included raw identity fields (birthday/cardNum). I4 redaction at record time made replay-reconstructed passengers carry `[REDACTED]` → live and replay derived **different keys** → `cassette_miss` → PARITY OK structurally impossible.
+
+### Change (cassette layer only)
+
+`packages/atlas/cassette.py` (ONLY file changed for A8; `verify.do` untouched, `queryOrderDetails.do` checked and confirmed unaffected — its key material is orderNo-only, no sensitive fields):
+
+- `_key_salt()` — fixed local salt: env `CASSETTE_KEY_SALT`, fallback `ATLAS_CLIENT_SECRET`, sha256-derived; never committed, never persisted into any cassette (I4). Empty salt still deterministic.
+- `_sensitive_key_placeholder()` — `hmac.new(_key_salt(), "[REDACTED]", sha256).hexdigest()`: salted hash of the common redaction sentinel.
+- `_keyify()` — recursively replaces `_SENSITIVE_KEYS` values with the placeholder, so **both** live payloads and replay-reconstructed passengers hash the same sentinel → mode-invariant by construction (I9), while raw PII never enters key material (I4).
+- `key_for` — now hashes `path + canonical_json(_keyify(_strip_volatile(payload)))`. Scope: order.do (and pay.do, which shares the sandbox card); verify.do/queryOrderDetails.do key derivation unchanged.
+
+### Unit (verbatim)
+
+```
+$ uv run python -c "..."   # mandate determinism test
+same raw twice -> MATCH
+```
+
+### E2E (verbatim, `DEMO_TAN_ORDER=TESTA20260815002134580 bash ops/demo.sh`)
+
+Identity: **FAMILY** (`TESTA20260815002134580`, CGK→SUB QGQG738 2026-09-13) — TAN and BIZ are exhausted (318, §12/§14/§15), so TAN/BIZ order.do re-recording under the new scheme is not possible live; the FAMILY chain is the viable demo identity. Run 2 (06:04–06:07Z):
+
+```
+$ grep -n "PARITY\|cassette_miss\|recovered" /tmp/a8-live2.log | head
+173:PARITY restarting in replay mode
+327:PARITY OK
+```
+
+- Live phase: `STAGE run 39s → confirm 44s → receipt`, `DEMO_COUNTS cases=1 events=107 receipts=1` → **RECOVERED**. Internal `parity_check` (demo.sh 506–521) then reset the DB, started the server in **genuine replay mode**, re-ran the happy path (order.do/pay.do replayed from the new-scheme cassettes), and compared step dumps: 107 vs 107 lines, **`PARITY OK`**. Zero `cassette_miss` anywhere in the log.
+- Positive control on the same step dumps: `caretaker parity-compare /tmp/rebound-live-steps.txt /tmp/rebound-replay-steps.txt` → `PARITY OK`, RC=0.
+- Negative control: `BREAK_PARITY=1 …` → `PARITY FAIL`, `live_steps=107 replay_steps=108`, diff shows `+injected.extra_step`, RC=1.
+- I4 scan over all new cassettes (Luhn-valid PANs, raw cardNum/creditcard/birthday): **no raw PII**. Only flagged values are the fixed demo contact addresses `rebound.operator@example.com`/`rebound.smoke@example.com` (explicitly non-PII zone-A contact, executor_agent.py). Stored bodies show `"cardNum": "[REDACTED]"`, `"birthday": "[REDACTED]"` (verified on recorded order.do files).
+
+Note on the mandate's external `REBOUND_MODE=replay bash ops/demo.sh` command: `demo.sh:537` exports `REBOUND_MODE=live`, making the external env inert for the main flow; the genuine replay lives inside `parity_check` (`start_server replay`, line 514), which is what produced the binding `PARITY OK`. Run 1 (03:23Z) failed at replay-verify with `cassette_miss` ×3 — root cause **pre-existing** Gemini scorer nondeterminism (replay's generated scorer returned no scores → deterministic fallback top-3 ≠ live top-3; verify.do keys are unchanged by A8 and those offers' cassettes were never recorded live), not an A8 defect; run 2's scorer coincidence (both phases fell back to `_SAFE_SCORING_CODE`) produced identical top-3 → verify → order.do → PARITY OK.
+
+### Deliverables
+
+- 239 new-scheme cassette files committed (full FAMILY demo chain: search/verify/order/pay/queryOrderDetails under the new key scheme); 3 pre-existing WIP cassette modifications (chaos/smoke) left uncommitted.
+- Backup: `/tmp/cassettes-known-good-v2` (247 files, current known-good set). `/tmp/cassettes-known-good` (218 files, old scheme) left untouched.
+
+Commit (local, unpushed): `b4ff428` `A8: salted-hash cassette keys for order.do — resolves I4/I9 structural conflict, PARITY OK achieved`
+
+**TASK A8 VERIFIED** — PARITY OK end-to-end (I9), no order.do cassette_miss, no raw PII in persisted cassettes (I4); honest scope note: TAN/BIZ re-recording impossible (exhausted), FAMILY chain committed instead.
+
