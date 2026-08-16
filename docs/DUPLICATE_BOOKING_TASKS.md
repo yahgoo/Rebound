@@ -548,3 +548,132 @@ Honest notes:
 
 TASK A3 VERIFIED
 
+---
+
+## 12. Identity exhaustion & rotation — investigation (16 Aug, Part 2)
+
+**Q1 — does exhaustion ever clear on its own? No.** All 18 recorded `queryOrderDetails.do`
+cassettes show `orderStatus "2"` (ticketed); `tktLimitTime` passes with no status transition and
+`_ORDER_STATUS_NAMES` (client.py) has no expiring state (`0` unpaid, `1` ticketing, `2` ticketed,
+`-3` cancelled). No cancel/void/refund endpoint exists — client.py exposes only `search.do`,
+`verify.do`, `getOfferPrice.do`, `order.do`, `pay.do`, `queryOrderDetails.do` (matches
+INTERFACES.md). Nothing was called (investigation only). Exhaustion is monotonic; it clears only
+via a sandbox reset.
+
+**Q2 — is varying `case_ref` alone enough for a fresh identity? Yes for identity; the real
+limiter is case_ref determinism.** Under `DEMO_UNIQUE_PAX=1` each `case_ref` derives a different
+surname (16-syllable table) AND a different passport (`RR{hex16}`), so Atlas sees a genuinely new
+passenger — flight space (route/date) is NOT the bottleneck. The constraint is that
+`Watcher.ingest` dedupes on `trigger_fingerprint = sha256(kind + atlas_order_no)`: re-triggering
+the same order returns the existing case; `_next_case_ref` advances only via a NEW order or
+webhook kind; and `demo.sh` resets the DB every run → case_ref always RC-0001 → same synthetic
+identity every run. Rotating the triggered order is required to change case_ref without a reset.
+
+**Q3 — can the three seeded orders spread load? Partially.**
+
+| order | order_no | case_ref | identity | route / date |
+|---|---|---|---|---|
+| TAN | TESTA20260815020605810 | RC-0001 | Au / RRf583d8e8d4263b30 | QG738 CGK→SUB 09-13 (61.12 USD) |
+| BIZ | TESTA20260815002321968 | RC-0002 | Ho / RR48629593b62d8535 | QG176 **HLP→SUB** 09-13 (52.27) |
+| FAMILY | TESTA20260815002134580 | RC-0003 | Au / RRad4d08c03b9a5b33 | QG738 **CGK→SUB** 09-13 (42.71) |
+
+Only 2 distinct routes among 3 orders (FAMILY shares TAN's flight) AND a surname collision:
+RC-0003 derives the same Au surname as RC-0001, so a FAMILY run risks colliding with RC-0001's
+bookings. BIZ is the only clean virgin route today.
+
+**Q4 — safe-rehearsal budget.** ~2–3 clean live runs per identity (8-run follow-up: runs 1–5
+reduced/recovered, runs 6–8 failed 3×318 — §9). With rotation: ~3 runs total (one per order),
+after which all three fingerprints are consumed and re-triggers return existing cases. Each live
+run also grows the cassette store.
+
+**Q5 — pre-demo-day procedure (using the A3 preflight).**
+1. Morning-of: `PREFLIGHT_ONLY=1 bash ops/demo.sh` (currently probes TAN only — see A2c).
+   Expect `PREFLIGHT OK` (`past_318=False`, `top3_duplicate_risk=0`).
+2. Demo on a **never-triggered** order → fresh case_ref → fresh synthetic identity (BIZ today).
+3. Keep `REBOUND_MODE=replay` as a pre-announced fallback.
+4. Respect the budget: plan ≤2–3 live runs before the sandbox needs a reset.
+
+### A2c — rotate the seeded order per invocation (proposal, NOT implemented)
+
+Goal: consecutive demo invocations produce fresh case_refs (fresh synthetic identities under
+`DEMO_UNIQUE_PAX=1`) without touching forbidden files.
+
+Proposal (`ops/demo.sh` only): replace the hardcoded `TAN_ORDER` trigger in `run_happy_path` with
+a rotation — e.g. `DEMO_ORDER_INDEX` env or a round-robin marker file — selecting
+TAN/BIZ/FAMILY; recommend `DEMO_UNIQUE_PAX=1`. The A3 preflight would probe the selected order.
+
+Constraints honoured: only `ops/demo.sh`; no `packages/` or `apps/` changes.
+
+Risks: RC-0003's Au-surname collision with RC-0001; FAMILY shares TAN's flight; at most 3
+case_refs before fingerprints are exhausted.
+
+Status: **proposed, NOT implemented** (awaiting approval).
+
+---
+
+## 13. A4 — widen failover depth 3 → 5 (VERIFIED)
+
+Implementation (`apps/api/routes_cases.py` only, as mandated):
+
+- `max_attempts=int(os.environ.get("DEMO_MAX_ATTEMPTS", "5"))` at the `agent.execute(...)` call
+  (routes_cases.py:535) — env-sourced, default 5, tunable at demo time.
+- Confirmed `ExecutorAgent.execute` slices `ordered_candidates[:max_attempts]`
+  (executor_agent.py:296); Guardian cap binds every candidate/attempt (I3); no new human tap (I6).
+
+Verify 1 — `bash ops/demo.sh 2>&1 | rg -n "stage|elapsed|attempt"` (04:13:30Z run, default Tan
+identity, past-318 cassette `3347c510108b`):
+
+```
+RECEIPT (live run) — elapsed 89s, human_taps 1, amount_paid 38.28 USD
+  attempts: [ candidate 12 -> error "318" (QG716 CGK-SUB 09-14 15:05, 36.49)
+             candidate 7  -> paid True (QG738 CGK-SUB 09-14 06:05, 38.28) ]
+```
+
+→ RECOVERED: attempt 1 hit 318 on a past-318 identity, attempt 2 failover-paid. The same run's
+parity replay failed `cassette_miss` (pre-existing I9/A2b, unrelated to A4). Second invocation
+matched exactly `"elapsed_seconds": 130,` + `"attempts": [` and recovered live again; its parity
+replay also failed cassette_miss.
+
+Verify 2 — `uv run python -m packages.agents.caretaker receipt RC-0001` → `no RecoveryReceipt`
+(expected at that moment: the DB was the parity-replay state, case failed; the live receipt is
+above). After the fresh-identity run the same command on RC-0002 prints the full receipt (below).
+
+Verify 3 — `GUARDIAN_MAX_SPEND_SGD=1 bash ops/demo.sh 2>&1 | rg -n "over_cap"`:
+
+- stdout match: none — because with a $1 cap the cap binds at verification, before any attempt:
+  the run endpoint returned `{"detail":"no verified candidate is eligible"}` (409) and demo.sh
+  aborted (no parity phase).
+- DB evidence: 3 candidates `verified=True` then `rejected_reason="over_cap"` (10 verify-failed);
+  3× `executor.cap_rejected` events `over_cap offer=…`; case failed; no payment, no human tap.
+
+Conclusion: the Guardian cap binds every candidate (I3) — proven stronger than asked (rejections
+occur even before attempts start).
+
+Fresh-identity test (Part 2's finding: BIZ → RC-0002 → Ho, HLP→SUB virgin route):
+
+```
+live server: DEMO_UNIQUE_PAX=1 DEMO_MAX_ATTEMPTS=5
+POST /cases/trigger {"atlas_order_no":"TESTA20260815002321968"} -> {"case_ref":"RC-0002"}
+POST /cases/RC-0002/run {} -> awaiting_confirmation (candidates [14,15,16], cap 800)
+POST /cases/RC-0002/confirm {candidate_id:14, nonce} -> accepted
+status -> recovered (~76s)
+caretaker receipt RC-0002:
+  elapsed_seconds: 131, human_taps: 1, amount_paid: 79.46 USD
+  attempts: [ candidate 14 -> paid True, error_code None ]   # 1 attempt, clean pay
+  counterfactual: -11.31 SGD, +6.75 h
+```
+
+`watcher.ingest` confirms RC-0002 opened from the BIZ order; `executor.demo_unique_pax` confirms
+the per-case_ref synthetic Ho identity was used.
+
+Failure-mode distinction (explicit): **no run produced 318 on all 5 attempts.** Run A used 2
+attempts (318 → success), run B used 1 (clean pay) — attempts 4–5 were available but never
+decisive. 5×318 would indicate identity exhaustion (NOT an A4 failure); a genuine A4 failure
+would be a crash/mis-execution at depth ≤5. Neither occurred. The prior 3×318 exhaustion
+(max_attempts=3) was measured on the Au identity in an earlier search state, so A4's marginal
+benefit beyond 3 attempts is inferred from the slicing mechanism rather than directly observed.
+
+Honest note: A4's change is **uncommitted** (the mandate committed only A1/A2/A3/docs).
+
+TASK A4 VERIFIED
+
