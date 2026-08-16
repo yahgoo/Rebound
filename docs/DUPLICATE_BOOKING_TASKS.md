@@ -874,6 +874,7 @@ DEMO_ORDER=TESTA… bash ops/demo.sh                      # full E2E incl. inter
 | TESTA20260815002321968 | biz | HLP-SUB 09-13 | Test/Passenger | used | §14 fallback run |
 | TESTA20260815002134580 | family | CGK-SUB 09-13 | Test/Passenger | exhausted | A8 run-2 + A9 run-4 |
 | TESTA20260816190635232 | part2 | SUB-CGK 09-20 | Lim/Test | used (fresh → used) | A9 run-5 (1 clean run); gate blocks run-2 (`duplicate_risk:2`) |
+| TESTA20260816191909855 | a9-confirm-2 | SUB-HLP 09-27 | Tan/Test | used (fresh → used) | A9 run-6 (2nd clean run, PARITY OK); gate blocks run-2 (`duplicate_risk:2`) |
 
 ### Verification
 
@@ -933,4 +934,15 @@ A2c (§19) delivered a fresh identity: **`TESTA20260816190635232`** (SUB→CGK 2
 - Replay: same candidate_ids [5,6,2], same recommended 5, same receipt (70.34, 1 attempt, error null), scoring code from cache (`source=a9_cache`, 2608 bytes) → **`PARITY OK`** (demo.sh:258), DEMO EXIT=0, 72 events both phases.
 
 A second consecutive run was correctly blocked by the reused A3 gate: `PREFLIGHT DEGRADED reason=duplicate_risk:2` (held_flights=2 — original + recovery flight both booked by Lim; 2 of the top-3 cheapest candidates would 318). Per the A2c mandate's discipline, one clean run alone does not establish reliability: **PARITY OK on 1/1 available run this session; root cause and fix are solid, full reliability not yet confirmed across repeats.** A future session mints a fresh identity (`bash ops/mint_order.sh …`) and takes the second confirmation.
+
+### Second confirmation (16 Aug, run 6 — fresh identity `a9-confirm-2`)
+
+Minted via the A2c rotation mechanism: `bash ops/mint_order.sh SUB HLP 2026-09-27 a9-confirm-2` → `MINT OK order_no=TESTA20260816191909855 route=SUB-HLP date=2026-09-27 passenger=Tan/Test amount=64.94 USD paid=True status=0` (recorder=None, no cassette pollution; ticketing_in_process at warm, settled shortly after). Registry entry appended with `status=fresh`, flipped to `used` after the E2E (observed usage).
+
+- **Preflight** (`DEMO_ORDER=TESTA20260816191909855 PREFLIGHT_ONLY=1 bash ops/demo.sh`): `PREFLIGHT OK` — `held_flights=1`, `past_318=False`, order.do cassette absent, probe search 2 offers SUB→HLP 09-27, `top3_duplicate_risk=1`. All mandated headroom conditions met; identity spent.
+- **Live phase** (run 6, 11:19Z, `/tmp/a9-confirm-2.log`): RC-0001 → `awaiting_confirmation` candidate_ids **[4,2,3] recommended 4** → confirm 4 → receipt `amount_paid=63.44 USD`, **1 attempt, error_code=null, verified=true**, zero 318/604/616/timeouts, 106 events (receipt event_ids 1..106).
+- **Dedup evidence (replay):** plan cache = 4 strategies, **2 unique search payloads** — `same_route_later`, `nearby_airport`, `one_stop_reroute` share the IDENTICAL SUB→HLP 09-27 payload (the exact run-3 race shape) collapsed by `fan_out()` dedup into one search; `next_morning_hotel` on 09-28. All 4 candidates carry rids from that single response (4 distinct routing identifiers, one per offer) — no per-strategy rid split.
+- **Replay phase:** same candidates [4,2,3], same recommended 4, same receipt (63.44, 1 attempt, error null), scoring code from cache (`strategist.scoring_code_written` → `source=a9_cache`, `defines_score=true`, nbytes=2329 = `/tmp/rebound_scoring_code.py` size), verify events `verified=True` for all confirmed offers → **`PARITY OK`**, zero cassette_miss, DEMO EXIT=0, 107 DB events (replay-final state; live dump 106 + parity compare on event.step lines).
+
+Two clean, independent fresh-identity parity runs after the dedup fix (run 5 on TESTA20260816190635232, run 6 on TESTA20260816191909855) with identical live/replay candidates, recommendation, and receipt, zero 318 and zero cassette_miss on both. Per the mandate's verdict discipline, the second confirmation is clean → **TASK A9 VERIFIED**.
 
