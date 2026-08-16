@@ -9,6 +9,7 @@ from __future__ import annotations
 import ast
 import asyncio
 import json
+import os
 import re
 import sys
 from collections.abc import Callable
@@ -30,6 +31,16 @@ from packages.router.base import ModelRequest, ModelRouter
 
 _STRATEGIST_PROMPT = Path(__file__).resolve().parent / "prompts" / "strategist.md"
 _SCORING_PROMPT = Path(__file__).resolve().parent / "prompts" / "scoring_codegen.md"
+
+# Cache path for generated scoring code so replay reuses the live version.
+# Overwritten on each live run; in replay mode the cached version is loaded
+# instead of making a fresh (nondeterministic) model call.
+_SCORING_CACHE_PATH = Path("/tmp/rebound_scoring_code.py")
+
+# Cache path for the search plan. plan() is another nondeterministic model
+# call; replay loads the live plan so search payloads (and thus cassettes,
+# candidates and verify keys) stay identical to the recorded run (A9).
+_PLAN_CACHE_PATH = Path("/tmp/rebound_plan.json")
 
 _STEP_DISPATCHED = "strategist.strategy_dispatched"
 _STEP_RETURNED = "strategist.search_returned"
@@ -124,6 +135,18 @@ class Strategist:
                 "and destination_candidates before plan()"
             )
 
+        mode = (os.environ.get("REBOUND_MODE") or "live").strip().lower()
+        if mode == "replay" and _PLAN_CACHE_PATH.exists():
+            try:
+                cached = json.loads(_PLAN_CACHE_PATH.read_text(encoding="utf-8"))
+                plans = [
+                    StrategyPlan.model_validate(item) for item in cached.get("plans", [])
+                ]
+                if plans:
+                    return plans
+            except Exception:
+                pass  # fall through to live generation on corrupt cache
+
         base_dep = _base_departure(original)
         adults = max(1, int(intent.passenger_count))
 
@@ -161,6 +184,27 @@ class Strategist:
                 base_departure=base_dep,
                 adults=adults,
             )
+
+        # Persist so replay reuses the exact live plan (identical search
+        # payloads -> identical cassettes -> identical candidates).
+        _PLAN_CACHE_PATH.write_text(
+            json.dumps(
+                {
+                    "plans": [
+                        {
+                            "strategy": plan.strategy.value,
+                            "search_request": plan.search_request.model_dump(
+                                mode="json"
+                            ),
+                            "rationale": plan.rationale,
+                        }
+                        for plan in plans
+                    ]
+                },
+                separators=(",", ":"),
+            ),
+            encoding="utf-8",
+        )
         return plans
 
     async def fan_out(self, plans: list[StrategyPlan]) -> list[Candidate]:
@@ -187,6 +231,23 @@ class Strategist:
                 },
             )
 
+        def _payload_key(plan: StrategyPlan) -> tuple[Any, ...]:
+            req = plan.search_request
+            return (
+                req.origin.upper(),
+                req.destination.upper(),
+                req.departure_date.isoformat(),
+                int(req.adults),
+                int(req.children),
+                int(req.infants),
+            )
+
+        # Fire ONE search per unique payload. The sandbox mints a fresh
+        # routingIdentifier per call, so concurrent duplicate searches (same
+        # cassette key) can record one response while candidates/verify use
+        # another — replay would then verify rids no cassette contains (A9).
+        unique = {_payload_key(p): p for p in plans}
+
         async def _one(
             plan: StrategyPlan,
         ) -> tuple[StrategyPlan, list[Offer], str | None]:
@@ -196,7 +257,14 @@ class Strategist:
             except AtlasNoResultsError as exc:
                 return plan, [], str(exc.code)
 
-        gathered = await asyncio.gather(*[_one(p) for p in plans])
+        unique_results = await asyncio.gather(*[_one(p) for p in unique.values()])
+        by_key = {
+            _payload_key(plan): (offers, err_code)
+            for plan, offers, err_code in unique_results
+        }
+        # Preserve plan order so per-strategy events and candidate strategy
+        # labels match the previous (pre-dedup) behavior exactly.
+        gathered = [(plan, *by_key[_payload_key(plan)]) for plan in plans]
 
         by_offer: dict[str, Candidate] = {}
         any_offers = False
@@ -248,8 +316,28 @@ class Strategist:
     async def write_scoring_code(self, intent: RecoveryIntent) -> str:
         """Model-generated Python scored in Zone B. Must define
         `def score(payload: dict) -> list[dict]` and use only the stdlib.
+
+        In replay mode (REBOUND_MODE=replay) the cached scoring code from the
+        live run is loaded if available, guaranteeing identical live/replay
+        scoring and eliminating nondeterministic-top-3 cassette_miss (A9).
         """
         global _FORCE_BAD_SCORING_ONCE
+
+        mode = (os.environ.get("REBOUND_MODE") or "live").strip().lower()
+        if mode == "replay" and _SCORING_CACHE_PATH.exists():
+            cached = _SCORING_CACHE_PATH.read_text(encoding="utf-8")
+            if intent.case_id:
+                await self._write_event(
+                    case_id=intent.case_id,
+                    step=_STEP_SCORING_CODE,
+                    summary="scoring code loaded from cache",
+                    payload={
+                        "nbytes": len(cached.encode("utf-8")),
+                        "defines_score": True,
+                        "source": "a9_cache",
+                    },
+                )
+            return cached
 
         user_prompt = _build_scoring_prompt(intent)
         request = ModelRequest(
@@ -286,6 +374,9 @@ class Strategist:
             err2 = _scoring_code_error(code)
             if err2 is not None:
                 raise ValueError(f"scoring code rejected after one retry: {err2}")
+
+        # Persist to cache so replay mode reuses this exact code.
+        _SCORING_CACHE_PATH.write_text(code, encoding="utf-8")
 
         if intent.case_id:
             await self._write_event(

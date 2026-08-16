@@ -843,3 +843,43 @@ Commit (local, unpushed): `b4ff428` `A8: salted-hash cassette keys for order.do 
 
 **TASK A8 VERIFIED** — PARITY OK end-to-end (I9), no order.do cassette_miss, no raw PII in persisted cassettes (I4); honest scope note: TAN/BIZ re-recording impossible (exhausted), FAMILY chain committed instead.
 
+---
+
+## 18. A9 — eliminate scorer nondeterminism between live and replay (16 Aug, time-boxed)
+
+**Goal:** identical live/replay run steps and outcome (PARITY OK) on the FAMILY chain.
+
+### Root cause — concurrent duplicate search.do recording race (NOT the model call)
+
+Run 3's replay failure (`"no verified candidate is eligible"`, 409) was previously misattributed to scorer nondeterminism. Investigation disproved that: with the scoring-code cache active, the manual replay run loaded **fresh** scoring code (cache miss, 2687 bytes) that scored **all 13 candidates** (no `scoring_code_fallback`) — yet verify still `cassette_miss`-ed ×3 and the case 409'd. The divergence is in the **rids**, not the scoring.
+
+Field-by-field diff of a recorded `verify.do` rid vs the replay candidate rid for the **same offer** (rcnF0D1b = QG736):
+
+| rid field | live verify (recorded) | replay candidate | match |
+|---|---|---|---|
+| 1–7 (route / pax / prices / flight / dates) | identical | identical | ✓ |
+| **8 (sandbox token)** | `1786865021999190f7e69` | `178686502201305760b0b` | ✗ |
+| 9–11 (checksums) | derived from field 8 | derived from field 8 | ✗ (follows token) |
+
+Both tokens come from CGK→SUB 13 Sep searches one second apart (07:23:41Z vs 07:23:42Z). The replay token exists in search.do cassette `a46970ed…`; the **live token exists in NO cassette**.
+
+**Mechanism:** `strategist.plan()` emitted 4 strategies of which **3 shared an identical search payload** (CGK→SUB 2026-09-13, adults=1: `same_route_later`, `nearby_airport`, `one_stop_reroute`). `fan_out()` fired 3 **concurrent** `search.do` calls with the same payload → same deterministic cassette key. The Atlas sandbox mints a **fresh routingIdentifier token per call**. Candidates/verify consumed the FIRST-arrived response's rids (token A); the recorder persisted the LAST response under the same key (last-writer-wins) (token B). Replay candidates therefore carry token-B rids, and `verify.do` keys (sha256 of path + **full** rid payload — not volatile-stripped) can never match the recorded token-A keys → `cassette_miss` ×3 → zero verified candidates → 409. Neither the scoring-code cache nor a plan cache can fix this: the mismatch lives in the recorded search response vs the rids live verified.
+
+### Fix (packages/agents/strategist.py only, uncommitted)
+
+1. `fan_out()` **payload dedup** — one `search.do` per unique payload key (origin / destination / departure_date / adults / children / infants); results are shared across duplicate strategies, preserving plan order so per-strategy events and candidate labels are unchanged.
+2. `plan()` **file cache** (`/tmp/rebound_plan.json`) — replay loads the live plan so search payloads (and thus cassettes, candidates, verify keys) are identical across modes (A9).
+3. (Pre-existing) `write_scoring_code()` file cache (`/tmp/rebound_scoring_code.py`).
+
+### Verification
+
+- **Unit:** dedup test (4 plans → 2 searches; dates `[20260913, 20260914]`; per-strategy labels preserved). Plan-cache test: `REBOUND_MODE=replay` + cache → 0 model calls, datetime round-trip OK.
+- **Manual replay reproduction (zero identity spend):** reproduced run-3's 409 exactly; fresh scoring code scored all 13 candidates (no fallback) → confirms the mismatch is in verify rids, not scoring.
+- **Run 4** (the single permitted live run, 10:50Z, `PREFLIGHT_ONLY` headroom check first: held_flights=2): live phase succeeded — run → `awaiting_confirmation` (candidate_ids [5,2,4], 75 events), top-3 verified (Yh5G3uP/QG738, p-fFUToE/QG718, 6QZHCQv/QG736). **Direct live evidence the dedup works:** all 13 candidates carry exactly **2 rid tokens** (one per unique payload date — `17868774763532c30a51b` for 13 Sep, `17868774763540f0cf22a` for 14 Sep), not one token per strategy as in run-3. **BUT** the demo exited 1 at the confirm/pay money path: all 3 attempts returned error **318** (duplicate booking — FAMILY holds exhausted by prior A8 runs and never released) → `timeout waiting for RC-0001 status=recovered` → case status=failed → **`parity_check` never ran; no parity verdict.**
+
+### Outcome
+
+Fix implemented and unit-verified; dedup behavior confirmed live. E2E PARITY OK was **not** re-demonstrated: the one permitted run was consumed by the identity-level 318 failure before `parity_check` could execute. Identity headroom after run 4: **0** — a live re-verification requires an Atlas sandbox reset, then `bash ops/demo.sh` (FAMILY chain).
+
+**TASK A9 NOT VERIFIED** — root cause identified as the concurrent duplicate search.do recording race (live verified rids never match the recorded search cassette), fix implemented (`fan_out` payload dedup + plan cache) and unit-verified, but E2E parity not confirmed across repeats — 0 identity runs remain after run-4's 318 failures.
+
