@@ -7,7 +7,7 @@
 **Public URL:** `http://43.156.46.66:8000/` (healthz: `http://43.156.46.66:8000/healthz`)
 **REBOUND_MODE:** `replay`
 
-> **Note on external reachability:** as of this writing the Tencent Cloud *security group* (cloud-layer firewall, not reachable via SSH) does not yet allow inbound on port 8000 — the service is healthy on the host (verified via `curl http://127.0.0.1:8000/healthz`), but an external `curl http://43.156.46.66:8000/healthz` times out. Opening the port is a one-click console change (see "Firewall" below) that has been proposed but not yet applied.
+> **Note on external reachability:** verified open as of 17 Aug 2026. The Tencent Cloud *security group* (cloud-layer firewall, not reachable via SSH) now allows inbound on port 8000; external `curl http://43.156.46.66:8000/healthz` returns HTTP 200 `{"status":"ok","mode":"replay","executor":"local","surface":"operator","chaos":"none"}` (rule details in "Firewall" below).
 
 ## Why replay mode
 
@@ -79,13 +79,15 @@ SQLite at `/home/ubuntu/rebound/rebound.db` (real file path; WAL + `foreign_keys
 ## Firewall
 
 - OS-level: `ufw` inactive; `iptables` ACCEPT policy on all chains — no OS-level change was needed or made.
-- Cloud-level (Tencent Cloud security group): **proposed, pending user confirmation** — add inbound rule:
+- Cloud-level (Tencent Cloud security group): **applied 17 Aug 2026** — inbound rule now active:
 
   ```
   Type: Custom TCP | Port: 8000 | Source: 0.0.0.0/0 | Policy: Allow | Description: Rebound — replay-mode demo
   ```
 
-  Scoped to Rebound's port only; default policy untouched; existing ports (22 SSH, 8888 Hermes) unaffected.
+  Purpose: Rebound replay-mode demo. Scoped to Rebound's port only; default policy untouched; existing ports (22 SSH, 8888 Hermes) unaffected.
+
+  External verification (17 Aug 2026, from a non-VPS network): `curl http://43.156.46.66:8000/healthz` → HTTP 200, body `{"status":"ok","mode":"replay","executor":"local","surface":"operator","chaos":"none"}`; `curl http://43.156.46.66:8000/` → HTTP 401 `{"detail":"operator bearer token required"}` (expected — operator console requires the bearer token). Domain/TLS remains deferred; the current URL is plain HTTP on the IP.
 
 ## Hermes gateway — before/after (undisturbed)
 
@@ -117,7 +119,6 @@ Fix: commit `6487f1a` tracks the authoritative local versions byte-for-byte (ver
 ## Follow-up (not done in this pass)
 
 - **Domain + TLS**: plain HTTP on the raw IP for now. Once DNS is ready, add a domain (e.g. `rebound.example.com`) + Caddy/nginx auto-TLS as a separate task. Do not fabricate a domain.
-- **Open port 8000** in the Tencent Cloud security group (see Firewall) for external demo access.
 
 ## How to redeploy after a future code update
 
