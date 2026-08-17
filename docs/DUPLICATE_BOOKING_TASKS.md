@@ -946,3 +946,11 @@ Minted via the A2c rotation mechanism: `bash ops/mint_order.sh SUB HLP 2026-09-2
 
 Two clean, independent fresh-identity parity runs after the dedup fix (run 5 on TESTA20260816190635232, run 6 on TESTA20260816191909855) with identical live/replay candidates, recommendation, and receipt, zero 318 and zero cassette_miss on both. Per the mandate's verdict discipline, the second confirmation is clean → **TASK A9 VERIFIED**.
 
+
+---
+
+## Postscript — repo-integrity gap in the A8/A9 evidence trail (found 17 Aug, fixed in `6487f1a`)
+
+**Honest note:** the "PARITY OK" verdicts recorded above for A8 and A9 were produced with `caretaker.py`'s parity machinery (`ops/demo.sh` invokes `python -m packages.agents.caretaker` for receipt/parity-dump/parity-compare), but until `6487f1a` the file **was never committed** — it existed only as an untracked file in the local working tree. The same was true of `packages/domain/enums.py` (imported by committed code since Task 14), `packages/domain/db.py` (since Task 17), and `packages/agents/counterfactual.py` (imported by caretaker). Root cause: files simply never `git add`ed — not a `.gitignore` rule. **A fresh clone could not have re-run the A8/A9 evidence.**
+
+This was discovered when first-time deployment to the VPS (`43.156.46.66`, see `docs/DEPLOYMENT.md`) failed to boot with `ModuleNotFoundError: packages.domain.enums`. Commit `6487f1a` tracks the authoritative local versions byte-for-byte (SHA-256 verified local↔VPS). Reproducibility is restored: a clean clone boots (`/healthz` 200) and `caretaker --help` lists all six subcommands. The verdicts stand — the code that produced them is now what is committed — but the trail was not reproducible until this fix, and that fact should be recorded here.
