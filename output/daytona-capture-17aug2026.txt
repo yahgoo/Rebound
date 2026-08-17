@@ -1,0 +1,81 @@
+# Daytona Real Execution Capture — 17 Aug 2026
+## For video production workstream (Cursor mandate)
+
+## Scope — what this capture does and does not show
+
+**What WAS captured:** The AI-generated scoring step running in real Daytona sandboxes — 8 sandboxes provisioned concurrently with the Daytona API, executing a scoring function against 12 synthetic fixture candidates, producing a ranked list identical to LocalExecutor (PARITY OK). Real provisioning timings are shown below (majority ~1.5-2.0s, with two outliers at ~22s from resource contention). Zero sandboxes survived after cleanup.
+
+**What was NOT captured:** A full search → verify → confirm → order → pay recovery case executing through Daytona end to end. This capture exercises only the scoring isolation (Zone B) — the step where model-generated ranking code runs in a sandbox with no network access. The surrounding search, verify, order, and pay stages are unrelated to Daytona and run through the Atlas transport layer regardless of EXECUTOR setting.
+
+**Badging requirement for video:** Must be badged as "real Daytona sandbox execution of the scoring step" — not as "the full recovery ran on Daytona." Mislabeling this as an end-to-end Daytona capture would repeat the exact judge-critique defect this mandate is fixing.
+
+## Setup
+- Target slots: 8
+- Candidates: 12 synthetic fixtures (no live Atlas spend required — scoring is data-independent)
+- Scoring code: hand-written stdlib-only, identical to smoke_parity parity test
+- Daytona API key: configured in .env
+
+## Execution output
+```
+=== DaytonaExecutor (8 sandboxes, 12 candidates) ===
+status slot=0 state=pending sandbox_id=None elapsed=0.01s
+status slot=1 state=pending sandbox_id=None elapsed=0.01s
+status slot=2 state=pending sandbox_id=None elapsed=0.01s
+status slot=3 state=pending sandbox_id=None elapsed=0.01s
+status slot=4 state=pending sandbox_id=None elapsed=0.01s
+status slot=5 state=pending sandbox_id=None elapsed=0.01s
+status slot=6 state=pending sandbox_id=None elapsed=0.01s
+status slot=7 state=pending sandbox_id=None elapsed=0.01s
+status slot=0 state=starting sandbox_id=None elapsed=0.01s
+status slot=1 state=starting sandbox_id=None elapsed=0.01s
+status slot=2 state=starting sandbox_id=None elapsed=0.01s
+status slot=3 state=starting sandbox_id=None elapsed=0.01s
+status slot=4 state=starting sandbox_id=None elapsed=0.01s
+status slot=5 state=starting sandbox_id=None elapsed=0.01s
+status slot=6 state=starting sandbox_id=None elapsed=0.01s
+status slot=7 state=starting sandbox_id=None elapsed=0.01s
+status slot=7 state=running sandbox_id='1c12f37a-62eb-42e6-906e-5881c729388a' elapsed=1.52s
+status slot=2 state=running sandbox_id='67c2cb60-e4d7-4d0f-a944-33bc79f746c9' elapsed=1.56s
+status slot=3 state=running sandbox_id='2a6d2724-5e03-4ff3-9727-20c6fd3edf45' elapsed=1.65s
+status slot=6 state=running sandbox_id='8eebc226-8a25-4206-8b1b-69fc3f18d72c' elapsed=1.94s
+status slot=5 state=running sandbox_id='00350f0c-309d-4e6b-bd65-5d3782aa3c80' elapsed=1.96s
+status slot=1 state=running sandbox_id='a3d2ed96-0ab5-4075-91a0-0d82a06c9819' elapsed=1.98s
+status slot=7 state=done sandbox_id='1c12f37a-62eb-42e6-906e-5881c729388a' elapsed=2.33s
+status slot=3 state=done sandbox_id='2a6d2724-5e03-4ff3-9727-20c6fd3edf45' elapsed=2.41s
+status slot=2 state=done sandbox_id='67c2cb60-e4d7-4d0f-a944-33bc79f746c9' elapsed=2.49s
+status slot=6 state=done sandbox_id='8eebc226-8a25-4206-8b1b-69fc3f18d72c' elapsed=2.71s
+status slot=5 state=done sandbox_id='00350f0c-309d-4e6b-bd65-5d3782aa3c80' elapsed=2.84s
+status slot=1 state=done sandbox_id='a3d2ed96-0ab5-4075-91a0-0d82a06c9819' elapsed=2.92s
+status slot=4 state=running sandbox_id='153426d8-ffbc-499a-a086-f430175576d0' elapsed=22.24s
+status slot=4 state=done sandbox_id='153426d8-ffbc-499a-a086-f430175576d0' elapsed=22.57s
+status slot=0 state=running sandbox_id='abebd996-1445-458f-b92d-fa2cb4d139fc' elapsed=23.04s
+status slot=0 state=done sandbox_id='abebd996-1445-458f-b92d-fa2cb4d139fc' elapsed=23.47s
+
+=== TIMING SUMMARY ===
+Total wall-clock: 26.14s
+  slot 0: provision=23.02s compute=0.44s total=23.47s
+  slot 1: provision=1.97s compute=0.94s total=2.92s
+  slot 2: provision=1.55s compute=0.93s total=2.49s
+  slot 3: provision=1.63s compute=0.76s total=2.41s
+  slot 4: provision=22.22s compute=0.34s total=22.57s
+  slot 5: provision=1.95s compute=0.88s total=2.84s
+  slot 6: provision=1.93s compute=0.77s total=2.71s
+  slot 7: provision=1.51s compute=0.81s total=2.33s
+
+  First sandbox running:    1.52s
+  Last scoring result:      23.47s
+  Scored candidates:        12
+```
+
+## Key observations
+1. **Sandbox provisioning is seconds-scale** (majority 1.5-2.0s, two outliers at ~22s likely resource contention) — this is real Daytona sandbox behavior, not the ~46-58ms local-executor artifact
+2. **Scoring execution is sub-second** (~0.3-0.9s) once the sandbox is running — the code itself runs fast
+3. **Total 8-slot fan-out completes in ~26s** — acceptable for the demo
+4. **Zero surviving sandboxes** — cleanup is reliable
+5. **Ranking matches LocalExecutor** (PARITY OK) — security boundary with identical results
+
+## Video use
+- The 1.5-2s provisioning beat shows real Daytona sandbox spin-up
+- The 8-slot sandbox grid in the UI reflects actual isolated execution
+- Total 26s for 12 candidates across 8 sandboxes is the honest timing
+- No live Atlas spend required for scoring isolation

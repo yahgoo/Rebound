@@ -101,7 +101,7 @@ if registry.is_file():
 PY
 )"
 fi
-SELECTED_ORDER="${SELECTED_ORDER:-$TAN_ORDER}"
+SELECTED_ORDER="${SELECTED_ORDER:-$FAMILY_ORDER}"
 export SELECTED_ORDER PROBE_ORDER="$SELECTED_ORDER"
 echo "ORDER_SELECTION ${SELECTED_ORDER}"
 
@@ -579,7 +579,7 @@ reset_sqlite
 stage_end
 
 stage_begin start_live
-export REBOUND_MODE=live
+export REBOUND_MODE="${REBOUND_MODE:-live}"
 start_server live
 curl -sS "$BASE/healthz"; echo
 json_post "$BASE/chaos" '{"profile":"none"}'; echo

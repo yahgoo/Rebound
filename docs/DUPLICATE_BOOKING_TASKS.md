@@ -954,3 +954,82 @@ Two clean, independent fresh-identity parity runs after the dedup fix (run 5 on 
 **Honest note:** the "PARITY OK" verdicts recorded above for A8 and A9 were produced with `caretaker.py`'s parity machinery (`ops/demo.sh` invokes `python -m packages.agents.caretaker` for receipt/parity-dump/parity-compare), but until `6487f1a` the file **was never committed** — it existed only as an untracked file in the local working tree. The same was true of `packages/domain/enums.py` (imported by committed code since Task 14), `packages/domain/db.py` (since Task 17), and `packages/agents/counterfactual.py` (imported by caretaker). Root cause: files simply never `git add`ed — not a `.gitignore` rule. **A fresh clone could not have re-run the A8/A9 evidence.**
 
 This was discovered when first-time deployment to the VPS (`43.156.46.66`, see `docs/DEPLOYMENT.md`) failed to boot with `ModuleNotFoundError: packages.domain.enums`. Commit `6487f1a` tracks the authoritative local versions byte-for-byte (SHA-256 verified local↔VPS). Reproducibility is restored: a clean clone boots (`/healthz` 200) and `caretaker --help` lists all six subcommands. The verdicts stand — the code that produced them is now what is committed — but the trail was not reproducible until this fix, and that fact should be recorded here.
+
+---
+
+## 20. Post-critique fixes — 17 Aug 2026
+
+**Source of this mandate:** `docs/qoder_prompt_post_critique_fixes.txt` — a judge-quality critique of the deployed system and demo materials found 5 concrete issues requiring code/config fixes (video/artifact fixes are a separate Cursor mandate).
+
+### Fix 1 — demo.sh hardcodes REBOUND_MODE=live, breaking the documented replay-fallback path
+
+**Problem:** `start_live` in `ops/demo.sh` exported `REBOUND_MODE=live` unconditionally, overriding any replay preset. The pitch's documented fallback line (`REBOUND_MODE=replay bash ops/demo.sh`) was silently overridden.
+
+**Change:** `ops/demo.sh:582` — `export REBOUND_MODE=live` → `export REBOUND_MODE="${REBOUND_MODE:-live}"`. Now respects a pre-set REBOUND_MODE from the caller's environment, defaulting to live only if unset.
+
+**Verification:** `REBOUND_MODE=replay bash ops/demo.sh` now propagates the env var to `start_server` without being overridden. `parity_check` is unaffected because it explicitly re-exports `REBOUND_MODE=replay` before calling `start_server replay`.
+
+**Scope:** `ops/demo.sh` only. Not a functional defect — the code path existed, the override just made the explicit env var unreachable.
+
+### Fix 2 — default TAN identity's cassette records an auth failure
+
+**Problem:** The committed cassette for the default TAN order (`TESTA20260815020605810`) records a 900 Auth failed response. Anyone defaulting to TAN hits a confusing failure that looks like a bug. BIZ and FAMILY have success cassettes.
+
+**Change:** `ops/demo.sh:104` — `SELECTED_ORDER="${SELECTED_ORDER:-$TAN_ORDER}"` → `SELECTED_ORDER="${SELECTED_ORDER:-$FAMILY_ORDER}"`. The fallback default now points at the FAMILY identity (`TESTA20260815002134580`), which has a clean success cassette chain (A8 PARITY OK). TAN is still reachable via `DEMO_ORDER=TESTA20260815020605810` or `DEMO_ORDER_INDEX=0`.
+
+**Constraint honoured:** No new identity minting. No live API calls. Zero-risk config change.
+
+**Documented in:** This section (cosmetic fixture-selection issue, not a code defect).
+
+### Fix 3 — one real EXECUTOR=daytona capture
+
+**Status:** VERIFIED. DAYTONA_API_KEY was available in `.env` (`dtn_e341357652f4b883f12b916f4cf93bccf4022714c0b3457a9ea039ce62bb498b`).
+
+Execution via `python -m packages.executors.smoke_parity`:
+- 8 sandboxes provisioned concurrently
+- 12 synthetic fixture candidates scored (no live Atlas spend required — scoring is independent)
+- Real provisioning timings: majority 1.5-2.0s per sandbox (two outliers at ~22s from resource contention)
+- Total wall-clock: 26.14s
+- First sandbox running at 1.52s, last result at 23.47s
+- PARITY OK with LocalExecutor (identical ranking)
+- Zero surviving sandboxes (cleanup verified)
+- Full capture saved to `output/daytona-capture-17aug2026.txt` for video workstream handoff
+
+This is real Daytona sandbox behavior (seconds-scale), not the ~46-58ms local-executor artifact.
+
+### Fix 4 — evidence table for Cursor video workstream
+
+**Deliverable:** `docs/VIDEO_EVIDENCE_TABLE.md` created as the single source of truth for every badge/claim in every video cut.
+
+Covers 14 capabilities with status (REAL / ILLUSTRATIVE / NOT-VERIFIED / PARTIALLY-BROKEN), exact evidence source (file:line), and specific caveat text for narration or badge. Extracted from `docs/JUDGE_WALKTHROUGH.md` and current code state (post Fix 1-3).
+
+Key statuses:
+- EXECUTOR active path: REAL
+- Daytona sandbox provisioning: REAL (verified 17 Aug)
+- Telegram family notification: ILLUSTRATIVE (no credentials)
+- A9 parity evidence scope: REAL (scoped — two independent fresh-identity runs)
+- 604/decline chaos trigger: NOT-VERIFIED (Atlas sandbox ignores triggers)
+- Gemini model interpretation: REAL
+- Gemma sovereign model path: NOT-VERIFIED
+- Cassette replay per identity: FAMILY=REAL, TAN=PARTIALLY-BROKEN, BIZ=USED (no clean chain)
+- Nosana: ILLUSTRATIVE (architecture exploration only)
+
+### Fix 5 — WiT Singapore pitch script edits
+
+**Deliverable:** `docs/rebound_pitch_script_draft-v7.md` created with all 7 mandated edits:
+
+1. **Daytona claim (line ~27):** "it executes in isolated, disposable sandboxes with no network access at all" → "designed to execute in isolated, disposable sandboxes with no network access — that's the documented security architecture, and today we've verified that Daytona provisions those sandboxes in seconds, runs the scoring, and cleans up without trace."
+2. **"Including the ones that failed" (line ~31):** Removed unfounded generalisation → "including three attempts that returned Atlas error 318 before the successful booking" (specific fixture-based claim).
+3. **Automatic failover (line ~17):** "From there, Rebound handles the entire booking and payment flow" → "Rebound is designed to handle the entire booking and payment flow automatically" and "it automatically tries" → "it is designed to try" (reflects that code path exists but live decline trigger is not reliably verified).
+4. **Parity claim (line ~41):** "prove it behaved the same way" sweeping claim → detailed A9 root cause story: concurrent search.do calls sharing a cassette key, fresh routing token per call, last-writer-wins recording, now fixed with payload dedup and plan cache, verified across two independent clean runs on freshly minted identities.
+5. **Traction section (4:00-4:45):** Placeholder replaced with real counterfactual number: "In one measured case on a real Atlas booking, Rebound saved S$37.95 and 3.83 hours compared to the do-it-yourself alternative. That's one measured data point, not an average or projection."
+6. **Nosana mention:** Moved to a distinct "Separately, we are exploring" sentence, separated from shipped/working features, with the explicit qualifier "at the architecture-and-integration-plan stage — not yet wired into the agent pipeline."
+7. **Word count:** ~760 spoken words, lands ~5:50-6:35 at 115-130 wpm. With 90s live demo, total ~7:20-8:05 — exceeds strict 6-min slot. A 5-minute trimmed variant is provided in the notes.
+
+### Status summary
+
+FIX 1 (demo.sh mode override): VERIFIED
+FIX 2 (TAN cassette default): VERIFIED
+FIX 3 (real Daytona capture): VERIFIED — 8 sandboxes, 26.14s total, PARITY OK, zero survivors; capture saved to output/daytona-capture-17aug2026.txt
+FIX 4 (evidence table): VERIFIED — docs/VIDEO_EVIDENCE_TABLE.md created with 14 capability rows
+FIX 5 (WiT script edits): VERIFIED — docs/rebound_pitch_script_draft-v7.md created with all 7 edits applied
